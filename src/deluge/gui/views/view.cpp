@@ -1922,19 +1922,42 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	// Calculate scale factor with minimum range to prevent explosion when audio is silent
 	// Samples are in Q15 format, so max range is ~65536 (32768 to -32768)
 	// Use minimum range of ~1% of full scale to prevent tiny noise from looking huge
-	constexpr int32_t kMinRange = 655; // ~1% of Q15 full scale
+	constexpr int32_t kMinRange = 655;         // ~1% of Q15 full scale
+	constexpr int32_t kSilenceThreshold = 100; // Threshold for detecting silence (samples near zero)
 	int32_t range = maxVal - minVal;
-	if (range < kMinRange) {
-		// When range is too small, center around zero and use minimum range
-		int32_t center = (maxVal + minVal) / 2;
-		minVal = center - (kMinRange / 2);
-		maxVal = center + (kMinRange / 2);
-		range = kMinRange;
-	}
-	float scale = static_cast<float>(kGraphHeight) / static_cast<float>(range);
+	bool isSilence = false;
 
-	// Draw center line (zero crossing reference)
-	canvas.drawHorizontalLine(kCenterY, kGraphMinX, kGraphMaxX);
+	if (range < kMinRange) {
+		// Check if this is actual silence (center near zero and very small range)
+		int32_t center = (maxVal + minVal) / 2;
+		if (std::abs(center) < kSilenceThreshold && range < kSilenceThreshold) {
+			// Actual silence - will draw a flat line at center
+			isSilence = true;
+		}
+		else {
+			// Small signal but not silence, center around zero and use minimum range
+			minVal = center - (kMinRange / 2);
+			maxVal = center + (kMinRange / 2);
+			range = kMinRange;
+		}
+	}
+
+	// Clear the oscilloscope area before drawing to prevent ghosting from previous frames
+	// maxY is exclusive, so add 1 to include the bottom margin
+	canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
+	                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
+
+	// If silence detected, draw a simple flat line at center and return early
+	if (isSilence) {
+		canvas.drawHorizontalLine(kCenterY, kGraphMinX, kGraphMaxX);
+		OLED::markChanged();
+		return;
+	}
+
+	// Calculate scale factor for normal waveform rendering
+	// Boost amplitude by 20% for better visibility (peaks can be clipped)
+	constexpr float kAmplitudeBoost = 1.2f;
+	float scale = (static_cast<float>(kGraphHeight) / static_cast<float>(range)) * kAmplitudeBoost;
 
 	// Draw waveform at half resolution (every other pixel)
 	// Reset drawing state to prevent connecting to previous frame (fixes vertical line at start)
