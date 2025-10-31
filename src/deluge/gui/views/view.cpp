@@ -1496,7 +1496,9 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 						// toggle displaying VU Meter and oscilloscope on / off
 						if (whichButton == 0) {
 							displayVUMeter = !displayVUMeter;
-							displayOscilloscope = displayVUMeter; // Oscilloscope follows VU meter toggle
+							// Oscilloscope follows VU meter toggle only if oscilloscope feature is enabled
+							displayOscilloscope =
+							    displayVUMeter && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
 						}
 					}
 					// refresh sidebar if VU meter previously rendered is still showing
@@ -1999,9 +2001,12 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 
 /// Check if oscilloscope should be rendered and render it if conditions are met
 bool View::potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas) {
-	// Re-enable oscilloscope if VU meter is enabled and conditions are met (e.g., after returning from clip view)
-	// This handles the case where displayOscilloscope was reset in focusRegained() but VU meter is still active
-	if (displayVUMeter && activeModControllableModelStack.modControllable
+	// Check if oscilloscope feature is enabled in runtime settings
+	bool oscilloscopeEnabled = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
+	// Re-enable oscilloscope if VU meter is enabled, oscilloscope feature is on, and conditions are met (e.g., after
+	// returning from clip view) This handles the case where displayOscilloscope was reset in focusRegained() but VU
+	// meter is still active
+	if (displayVUMeter && oscilloscopeEnabled && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		if (!displayOscilloscope) {
 			displayOscilloscope = true;
@@ -2011,7 +2016,7 @@ bool View::potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canv
 	}
 	// If oscilloscope should be displayed but conditions aren't met, disable it
 	if (displayOscilloscope
-	    && (!activeModControllableModelStack.modControllable
+	    && (!oscilloscopeEnabled || !displayVUMeter || !activeModControllableModelStack.modControllable
 	        || *activeModControllableModelStack.modControllable->getModKnobMode() != 0)) {
 		displayOscilloscope = false;
 	}
@@ -2022,7 +2027,8 @@ void View::requestOscilloscopeUpdateIfNeeded() {
 	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
 	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
 	constexpr uint32_t kOscilloscopeFrameSkip = 2;
-	if (displayOscilloscope && activeModControllableModelStack.modControllable
+	if (displayOscilloscope && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope) && displayVUMeter
+	    && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		oscilloscopeFrameCounter++;
 		// Update every N frames for ~30fps (reduce CPU usage)
