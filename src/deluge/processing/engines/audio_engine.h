@@ -216,6 +216,12 @@ extern deluge::dsp::StereoSample<float> approxRMSLevel;
 extern deluge::dsp::AbsValueFollower envelopeFollower;
 extern TaskID routine_task_id;
 
+// Oscilloscope sample buffer
+constexpr size_t kOscilloscopeBufferSize = 256;
+extern int32_t oscilloscopeSampleBuffer[kOscilloscopeBufferSize];
+extern volatile uint32_t oscilloscopeWritePos;
+extern volatile uint32_t oscilloscopeSampleCount;
+
 void feedReverbBackdoorForGrain(int index, q31_t value);
 
 /// returns whether a voice is allowed to start right now - otherwise it should be deferred to the next tick

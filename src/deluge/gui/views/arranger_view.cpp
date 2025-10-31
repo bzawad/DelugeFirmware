@@ -100,8 +100,16 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 		else {
 			stemExport.displayStemExportProgressOLED(StemExportType::TRACK);
 		}
+		return;
 	}
-	else if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
+
+	// Check if oscilloscope should be displayed (same conditions as VU meter)
+	if (view.potentiallyRenderOscilloscope(canvas)) {
+		// Oscilloscope was rendered, skip normal rendering
+		return;
+	}
+
+	if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
 		Output* output = outputsOnScreen[yPressedEffective];
 		view.displayOutputName(output);
 	}
@@ -3089,6 +3097,18 @@ void ArrangerView::graphicsRoutine() {
 
 	if (view.potentiallyRenderVUMeter(PadLEDs::image)) {
 		PadLEDs::sendOutSidebarColours();
+	}
+
+	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
+	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
+	if (view.displayOscilloscope && view.activeModControllableModelStack.modControllable
+	    && *view.activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
+		static uint32_t oscilloscopeFrameCounter = 0;
+		oscilloscopeFrameCounter++;
+		// Update every 2 frames for ~30fps (reduce CPU by ~50%)
+		if ((oscilloscopeFrameCounter % 2) == 0) {
+			renderUIsForOled();
+		}
 	}
 
 	if (display->haveOLED()) {

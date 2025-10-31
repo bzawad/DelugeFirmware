@@ -153,6 +153,11 @@ deluge::dsp::StereoSample<float> approxRMSLevel{0};
 deluge::dsp::AbsValueFollower envelopeFollower{};
 int32_t timeLastPopup{0};
 
+// Oscilloscope sample buffer
+alignas(CACHE_LINE_SIZE) int32_t oscilloscopeSampleBuffer[kOscilloscopeBufferSize]{};
+volatile uint32_t oscilloscopeWritePos = 0;
+volatile uint32_t oscilloscopeSampleCount = 0;
+
 SoundDrum* sampleForPreview;
 ParamManagerForTimeline* paramManagerForSamplePreview;
 
@@ -612,6 +617,33 @@ void renderAudio(size_t numSamples) {
 	metronome.render(renderingBuffer);
 
 	approxRMSLevel = envelopeFollower.calcApproxRMS(renderingBuffer);
+
+	// Sample audio for oscilloscope visualization (downsample for efficiency)
+	// Only sample if oscilloscope is likely to be displayed
+	// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~128-256 samples for display
+	constexpr uint32_t kSampleInterval =
+	    8; // Sample every 8th sample to get ~5.5k samples/sec, downsample to display width
+	static uint32_t sampleCounter = 0;
+	sampleCounter++;
+	if (sampleCounter >= kSampleInterval) {
+		sampleCounter = 0;
+		// Take a sample from the middle of the buffer for better representation
+		size_t midSample = numSamples / 2;
+		if (midSample < renderingBuffer.size()) {
+			// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
+			int32_t sampleL = renderingBuffer[midSample].l >> 16; // Convert Q31 to Q15 range
+			int32_t sampleR = renderingBuffer[midSample].r >> 16;
+			int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
+
+			// Write to circular buffer (thread-safe for single writer, single reader)
+			uint32_t writePos = oscilloscopeWritePos;
+			oscilloscopeSampleBuffer[writePos] = combined;
+			oscilloscopeWritePos = (writePos + 1) % kOscilloscopeBufferSize;
+			if (oscilloscopeSampleCount < kOscilloscopeBufferSize) {
+				oscilloscopeSampleCount = oscilloscopeSampleCount + 1;
+			}
+		}
+	}
 
 	setMonitoringMode();
 
