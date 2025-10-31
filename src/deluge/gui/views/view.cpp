@@ -113,6 +113,7 @@ View::View() {
 	cachedMaxYDisplayForVUMeterL = 255;
 	cachedMaxYDisplayForVUMeterR = 255;
 	displayOscilloscope = false;
+	oscilloscopeFrameCounter = 0;
 }
 
 void View::focusRegained() {
@@ -1867,12 +1868,12 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	constexpr int32_t kMargin = 2;
 	constexpr int32_t kGraphMinX = kMargin;
 	constexpr int32_t kGraphMaxX = kDisplayWidth - kMargin - 1;
-	// Reduced resolution: use half width for better performance
+	// Use half pixel resolution (kGraphWidth) for sampling, but display across full width for visual clarity
 	constexpr int32_t kGraphWidth = (kGraphMaxX - kGraphMinX + 1) / 2;
 	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
 
 	// Read sample count atomically (single read is safe)
-	uint32_t sampleCount = oscilloscopeSampleCount;
+	uint32_t sampleCount = oscilloscopeSampleCount.load(std::memory_order_acquire);
 	if (sampleCount < 2) {
 		// Not enough samples yet, draw empty
 		return;
@@ -1889,10 +1890,10 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	}
 
 	// Start reading from write position and work backwards to get most recent samples
-	uint32_t readStartPos = oscilloscopeWritePos;
+	uint32_t readStartPos;
 	if (sampleCount >= kOscilloscopeBufferSize) {
-		// Buffer is full, start from writePos (oldest will be at writePos+1)
-		readStartPos = (readStartPos + 1) % kOscilloscopeBufferSize;
+		// Buffer is full, oldest sample is at writePos (next to be overwritten)
+		readStartPos = oscilloscopeWritePos.load(std::memory_order_acquire);
 	}
 	else {
 		// Buffer not full, start from beginning
@@ -1904,22 +1905,16 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	int32_t minVal = INT32_MAX;
 	int32_t maxVal = INT32_MIN;
 	float scanIndex = 0.0f;
-	uint32_t scanPos = readStartPos;
 	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
-		int32_t sample = oscilloscopeSampleBuffer[scanPos];
+		// Calculate buffer index directly to avoid nested loop
+		uint32_t bufferIndex = (readStartPos + static_cast<uint32_t>(scanIndex)) % kOscilloscopeBufferSize;
+		int32_t sample = oscilloscopeSampleBuffer[bufferIndex];
 		if (sample < minVal)
 			minVal = sample;
 		if (sample > maxVal)
 			maxVal = sample;
-		// Advance to next sample to scan
+		// Advance scan index for next sample
 		scanIndex += stepSize;
-		uint32_t samplesToAdvance = static_cast<uint32_t>(scanIndex);
-		if (samplesToAdvance > 0) {
-			scanIndex -= static_cast<float>(samplesToAdvance);
-			for (uint32_t adv = 0; adv < samplesToAdvance && adv < sampleCount; adv++) {
-				scanPos = (scanPos + 1) % kOscilloscopeBufferSize;
-			}
-		}
 	}
 
 	// Calculate scale factor with minimum range to prevent explosion when audio is silent
@@ -1942,18 +1937,27 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	// Draw waveform at half resolution (every other pixel)
 	// Reset drawing state to prevent connecting to previous frame (fixes vertical line at start)
 	float sampleIndex = 0.0f;
-	scanPos = readStartPos;
 	int32_t lastX = -1;
 	int32_t lastY = -1;
 	bool isFirstPoint = true;
 
+	// Ensure numSamplesToDisplay is not zero (defensive programming)
+	if (numSamplesToDisplay == 0) {
+		return;
+	}
+
 	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
+		// Calculate buffer index directly to avoid nested loop
+		uint32_t bufferIndex = (readStartPos + static_cast<uint32_t>(sampleIndex)) % kOscilloscopeBufferSize;
 		// Get sample value
-		int32_t sample = oscilloscopeSampleBuffer[scanPos];
+		int32_t sample = oscilloscopeSampleBuffer[bufferIndex];
 
 		// Calculate Y position (center at kCenterY, scale relative to min/max)
 		// Convert from Q15 range to normalized position
-		int32_t normalizedOffset = static_cast<int32_t>((sample - minVal) * scale);
+		// Use int64_t for intermediate calculation to prevent overflow
+		int64_t sampleDiff = static_cast<int64_t>(sample) - static_cast<int64_t>(minVal);
+		int64_t scaled = static_cast<int64_t>(sampleDiff * scale);
+		int32_t normalizedOffset = static_cast<int32_t>(scaled);
 		int32_t y = kCenterY - (normalizedOffset - (kGraphHeight / 2));
 
 		// Clamp Y to valid range
@@ -1985,15 +1989,8 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 		lastX = x;
 		lastY = y;
 
-		// Advance sample position based on step size
+		// Advance sample index for next iteration
 		sampleIndex += stepSize;
-		uint32_t samplesToAdvance = static_cast<uint32_t>(sampleIndex);
-		if (samplesToAdvance > 0) {
-			sampleIndex -= static_cast<float>(samplesToAdvance);
-			for (uint32_t adv = 0; adv < samplesToAdvance && adv < sampleCount; adv++) {
-				scanPos = (scanPos + 1) % kOscilloscopeBufferSize;
-			}
-		}
 	}
 
 	// Mark OLED as changed so it gets sent to display
@@ -2019,6 +2016,20 @@ bool View::potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canv
 		displayOscilloscope = false;
 	}
 	return false;
+}
+
+void View::requestOscilloscopeUpdateIfNeeded() {
+	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
+	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
+	constexpr uint32_t kOscilloscopeFrameSkip = 2;
+	if (displayOscilloscope && activeModControllableModelStack.modControllable
+	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
+		oscilloscopeFrameCounter++;
+		// Update every N frames for ~30fps (reduce CPU usage)
+		if ((oscilloscopeFrameCounter % kOscilloscopeFrameSkip) == 0) {
+			renderUIsForOled();
+		}
+	}
 }
 
 void View::setActiveModControllableTimelineCounter(TimelineCounter* timelineCounter, bool shouldSendMidiFeedback) {

@@ -25,6 +25,7 @@
 #include "memory/object_pool.h"
 #include "model/output.h"
 #include "util/containers.h"
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -219,8 +220,8 @@ extern TaskID routine_task_id;
 // Oscilloscope sample buffer
 constexpr size_t kOscilloscopeBufferSize = 256;
 extern int32_t oscilloscopeSampleBuffer[kOscilloscopeBufferSize];
-extern volatile uint32_t oscilloscopeWritePos;
-extern volatile uint32_t oscilloscopeSampleCount;
+extern std::atomic<uint32_t> oscilloscopeWritePos;
+extern std::atomic<uint32_t> oscilloscopeSampleCount;
 
 void feedReverbBackdoorForGrain(int index, q31_t value);
 

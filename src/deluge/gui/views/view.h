@@ -148,7 +148,9 @@ public:
 
 	// oscilloscope rendering
 	bool displayOscilloscope;
+	uint32_t oscilloscopeFrameCounter;
 	bool potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas);
+	void requestOscilloscopeUpdateIfNeeded();
 
 	void getParameterNameFromModEncoder(int32_t whichModEncoder, char* parameterName);
 

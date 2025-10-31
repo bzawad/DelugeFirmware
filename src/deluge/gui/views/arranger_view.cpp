@@ -3100,16 +3100,7 @@ void ArrangerView::graphicsRoutine() {
 	}
 
 	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
-	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
-	if (view.displayOscilloscope && view.activeModControllableModelStack.modControllable
-	    && *view.activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
-		static uint32_t oscilloscopeFrameCounter = 0;
-		oscilloscopeFrameCounter++;
-		// Update every 2 frames for ~30fps (reduce CPU by ~50%)
-		if ((oscilloscopeFrameCounter % 2) == 0) {
-			renderUIsForOled();
-		}
-	}
+	view.requestOscilloscopeUpdateIfNeeded();
 
 	if (display->haveOLED()) {
 		sessionView.displayPotentialTempoChange(this);
