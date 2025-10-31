@@ -2026,9 +2026,8 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 bool View::potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	// Check if oscilloscope feature is enabled in runtime settings
 	bool oscilloscopeEnabled = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
-	// Re-enable oscilloscope if VU meter is enabled, oscilloscope feature is on, and conditions are met (e.g., after
-	// returning from clip view) This handles the case where displayOscilloscope was reset in focusRegained() but VU
-	// meter is still active
+	// Re-enable oscilloscope if VU meter is enabled and feature is on (handles case where displayOscilloscope
+	// was reset in focusRegained() but VU meter is still active)
 	if (displayVUMeter && oscilloscopeEnabled && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		if (!displayOscilloscope) {
