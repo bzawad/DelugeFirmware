@@ -104,6 +104,12 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 		stemExport.displayStemExportProgressOLED(StemExportType::TRACK);
 		return;
 	}
+
+	// Check if oscilloscope should be displayed (same conditions as VU meter)
+	if (view.potentiallyRenderOscilloscope(canvas)) {
+		// Oscilloscope was rendered, skip normal rendering
+		return;
+	}
 	sessionView.renderOLED(canvas);
 }
 
@@ -3076,6 +3082,9 @@ void ArrangerView::graphicsRoutine() {
 	if (view.potentiallyRenderVUMeter(PadLEDs::image)) {
 		PadLEDs::sendOutSidebarColours();
 	}
+
+	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
+	view.requestOscilloscopeUpdateIfNeeded();
 
 	if (display->haveOLED()) {
 		sessionView.displayPotentialTempoChange(this);

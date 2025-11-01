@@ -109,6 +109,8 @@ View::View() {
 	renderedVUMeter = false;
 	cachedMaxYDisplayForVUMeterL = 255;
 	cachedMaxYDisplayForVUMeterR = 255;
+	displayOscilloscope = false;
+	oscilloscopeFrameCounter = 0;
 }
 
 void View::focusRegained() {
@@ -126,6 +128,9 @@ void View::focusRegained() {
 	renderedVUMeter = false;
 	cachedMaxYDisplayForVUMeterL = 255;
 	cachedMaxYDisplayForVUMeterR = 255;
+	// Also disable oscilloscope when switching views
+	displayOscilloscope = false;
+	oscilloscopeFrameCounter = 0;
 }
 
 extern GlobalMIDICommand pendingGlobalMIDICommandNumClustersWritten;
@@ -1321,14 +1326,30 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 					// are we pressing the same button that is currently selected
 					if (*activeModControllableModelStack.modControllable->getModKnobMode() == whichButton) {
 						// you just pressed the volume mod button and it was already selected previously
-						// toggle displaying VU Meter on / off
+						// toggle displaying VU Meter and oscilloscope on / off
 						if (whichButton == 0) {
+							// Store previous state to determine if we need to refresh OLED when disabling
+							bool oscilloscopeWasDisplayed =
+							    displayOscilloscope
+							    && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
 							displayVUMeter = !displayVUMeter;
+							// Oscilloscope follows VU meter toggle only if oscilloscope feature is enabled
+							displayOscilloscope =
+							    displayVUMeter && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
+							// Refresh OLED if oscilloscope was previously displayed (need to show normal view when
+							// disabling)
+							if (oscilloscopeWasDisplayed) {
+								renderUIsForOled(); // refresh OLED to clear oscilloscope
+							}
 						}
 					}
 					// refresh sidebar if VU meter previously rendered is still showing
 					if (renderedVUMeter) {
 						uiNeedsRendering(rootUI, 0); // only render sidebar
+					}
+					// refresh OLED if oscilloscope is now displayed (when enabling)
+					if (displayOscilloscope) {
+						renderUIsForOled(); // refresh OLED to show oscilloscope
 					}
 				}
 
@@ -1664,6 +1685,15 @@ bool View::potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]) 
 
 	// if we made it here then we haven't rendered a VU meter in the sidebar
 	renderedVUMeter = false;
+	// Also disable oscilloscope when VU meter is not being rendered
+	if (!displayVUMeter && displayOscilloscope) {
+		displayOscilloscope = false;
+		// Trigger OLED refresh to clear oscilloscope and show normal view
+		RootUI* rootUI = getRootUI();
+		if (rootUI && !rootUIIsClipMinderScreen()) {
+			renderUIsForOled();
+		}
+	}
 
 	// return false so that the usual sidebar rendering can be drawn
 	return false;
@@ -1720,6 +1750,250 @@ void View::renderVUMeter(int32_t maxYDisplay, int32_t xDisplay, RGB thisImage[][
 		// y7 = red
 		else {
 			thisImage[yDisplay][xDisplay] = colours::red;
+		}
+	}
+}
+
+/// Render oscilloscope waveform on OLED display
+void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	using namespace deluge::hid::display;
+	using namespace AudioEngine;
+
+	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
+	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
+	constexpr int32_t kCenterY = OLED_MAIN_TOPMOST_PIXEL + (kDisplayHeight / 2);
+	constexpr int32_t kMargin = 2;
+	constexpr int32_t kGraphMinX = kMargin;
+	constexpr int32_t kGraphMaxX = kDisplayWidth - kMargin - 1;
+	// Use half pixel resolution (kGraphWidth) for sampling, but display across full width for visual clarity
+	constexpr int32_t kGraphWidth = (kGraphMaxX - kGraphMinX + 1) / 2;
+	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
+
+	// Read sample count atomically (single read is safe)
+	uint32_t sampleCount = oscilloscopeSampleCount.load(std::memory_order_acquire);
+	if (sampleCount < 2) {
+		// Not enough samples yet, draw empty
+		return;
+	}
+
+	// Determine how many samples to display (use half resolution for performance)
+	constexpr uint32_t kMaxDisplaySamples = kGraphWidth;
+	uint32_t numSamplesToDisplay = std::min(sampleCount, kMaxDisplaySamples);
+
+	// Calculate step size for downsampling if we have more samples than pixels (integer arithmetic)
+	uint32_t stepSize = (sampleCount > kMaxDisplaySamples) ? (sampleCount / kMaxDisplaySamples) : 1;
+	uint32_t remainder = (sampleCount > kMaxDisplaySamples) ? (sampleCount % kMaxDisplaySamples) : 0;
+
+	// Start reading from write position and work backwards to get most recent samples
+	uint32_t readStartPos;
+	if (sampleCount >= kOscilloscopeBufferSize) {
+		// Buffer is full, oldest sample is at writePos (next to be overwritten)
+		readStartPos = oscilloscopeWritePos.load(std::memory_order_acquire);
+	}
+	else {
+		// Buffer not full, start from beginning
+		readStartPos = 0;
+	}
+
+	// Find min/max for auto-scaling by scanning ONLY the samples we'll actually display
+	// This is much more efficient than scanning all samples
+	int32_t minVal = INT32_MAX;
+	int32_t maxVal = INT32_MIN;
+	uint32_t sampleIndex = 0;
+	uint32_t remainderAccumulator = 0;
+	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
+		// Calculate buffer index directly to avoid nested loop
+		uint32_t bufferIndex = (readStartPos + sampleIndex) % kOscilloscopeBufferSize;
+		int32_t sample = oscilloscopeSampleBuffer[bufferIndex];
+		if (sample < minVal)
+			minVal = sample;
+		if (sample > maxVal)
+			maxVal = sample;
+		// Advance sample index using integer-only math with remainder accumulation
+		sampleIndex += stepSize;
+		remainderAccumulator += remainder;
+		if (remainderAccumulator >= kMaxDisplaySamples) {
+			sampleIndex++;
+			remainderAccumulator -= kMaxDisplaySamples;
+		}
+	}
+
+	// Calculate scale factor with minimum range to prevent explosion when audio is silent
+	// Samples are in Q15 format, so max range is ~65536 (32768 to -32768)
+	// Use minimum range of ~1% of full scale to prevent tiny noise from looking huge
+	constexpr int32_t kMinRange = 655;        // ~1% of Q15 full scale
+	constexpr int32_t kSilenceThreshold = 10; // Threshold for detecting silence (samples near zero)
+	int32_t range = maxVal - minVal;
+	bool isSilence = false;
+
+	if (range < kMinRange) {
+		// Check if this is actual silence (center near zero and very small range)
+		int32_t center = (maxVal + minVal) / 2;
+		if (std::abs(center) < kSilenceThreshold && range < kSilenceThreshold) {
+			// Actual silence - will draw a flat line at center
+			isSilence = true;
+		}
+		else {
+			// Small signal but not silence, center around zero and use minimum range
+			minVal = center - (kMinRange / 2);
+			maxVal = center + (kMinRange / 2);
+			range = kMinRange;
+		}
+	}
+
+	// Clear the oscilloscope area before drawing to prevent ghosting from previous frames
+	// maxY is exclusive, so add 1 to include the bottom margin
+	canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
+	                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
+
+	// If silence detected, draw a simple flat line at center and return early
+	if (isSilence) {
+		canvas.drawHorizontalLine(kCenterY, kGraphMinX, kGraphMaxX);
+		OLED::markChanged();
+		return;
+	}
+
+	// Calculate scale factor for normal waveform rendering
+	// Boost amplitude by 20% for better visibility (peaks can be clipped)
+	constexpr float kAmplitudeBoost = 1.2f;
+	float scale = (static_cast<float>(kGraphHeight) / static_cast<float>(range)) * kAmplitudeBoost;
+
+	// Draw waveform - spread samples evenly across full width
+	// Reset drawing state to prevent connecting to previous frame (fixes vertical line at start)
+	sampleIndex = 0;
+	remainderAccumulator = 0;
+	int32_t lastX = -1;
+	int32_t lastY = -1;
+	bool isFirstPoint = true;
+
+	// Ensure numSamplesToDisplay is not zero (defensive programming)
+	if (numSamplesToDisplay == 0) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
+		// Calculate buffer index directly to avoid nested loop
+		uint32_t bufferIndex = (readStartPos + sampleIndex) % kOscilloscopeBufferSize;
+		// Get sample value
+		int32_t sample = oscilloscopeSampleBuffer[bufferIndex];
+
+		// Calculate Y position (center at kCenterY, scale relative to min/max)
+		// Convert from Q15 range to normalized position
+		// Use int64_t for intermediate calculation to prevent overflow
+		int64_t sampleDiff = static_cast<int64_t>(sample) - static_cast<int64_t>(minVal);
+		int64_t scaled = static_cast<int64_t>(sampleDiff * scale);
+		int32_t normalizedOffset = static_cast<int32_t>(scaled);
+		int32_t y = kCenterY - (normalizedOffset - (kGraphHeight / 2));
+
+		// Clamp Y to valid range
+		y = std::clamp(y, static_cast<int32_t>(OLED_MAIN_TOPMOST_PIXEL + kMargin),
+		               static_cast<int32_t>(OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1));
+
+		// Calculate X position - spread samples evenly across full width
+		int32_t x = kGraphMinX + static_cast<int32_t>((i * (kGraphMaxX - kGraphMinX + 1)) / numSamplesToDisplay);
+		// Ensure we don't exceed bounds
+		if (x > kGraphMaxX) {
+			x = kGraphMaxX;
+		}
+		if (i == numSamplesToDisplay - 1) {
+			x = kGraphMaxX; // Ensure last point reaches the end
+		}
+
+		// Draw line from previous point to current point
+		// Skip connecting first point to avoid vertical line from previous frame
+		if (!isFirstPoint && lastX >= 0 && lastX != x) {
+			// Draw line using same algorithm as community branch drawLine() for performance parity
+			// (drawLine not available in 1.2.1, so we implement it inline)
+			int32_t x0 = lastX;
+			int32_t y0 = lastY;
+			int32_t x1 = x;
+			int32_t y1 = y;
+
+			const bool steep = std::abs(y1 - y0) > std::abs(x1 - x0);
+			if (steep) {
+				std::swap(x0, y0);
+				std::swap(x1, y1);
+			}
+			if (x0 > x1) {
+				std::swap(x0, x1);
+				std::swap(y0, y1);
+			}
+
+			int32_t dx = x1 - x0;
+			int32_t dy = std::abs(y1 - y0);
+			int32_t error = dx / 2;
+			int32_t y_step = y0 < y1 ? 1 : -1;
+			int32_t currentY = y0;
+
+			for (int32_t currentX = x0; currentX <= x1; currentX++) {
+				int32_t actual_x = steep ? currentY : currentX;
+				int32_t actual_y = steep ? currentX : currentY;
+				canvas.drawPixel(actual_x, actual_y);
+
+				error -= dy;
+				if (error < 0) {
+					currentY += y_step;
+					error += dx;
+				}
+			}
+		}
+		else if (isFirstPoint) {
+			// First point of this frame, just draw a pixel (don't connect to previous frame)
+			canvas.drawPixel(x, y);
+			isFirstPoint = false;
+		}
+
+		lastX = x;
+		lastY = y;
+
+		// Advance sample index using integer-only math with remainder accumulation
+		sampleIndex += stepSize;
+		remainderAccumulator += remainder;
+		if (remainderAccumulator >= kMaxDisplaySamples) {
+			sampleIndex++;
+			remainderAccumulator -= kMaxDisplaySamples;
+		}
+	}
+
+	// Mark OLED as changed so it gets sent to display
+	OLED::markChanged();
+}
+
+/// Check if oscilloscope should be rendered and render it if conditions are met
+bool View::potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	// Check if oscilloscope feature is enabled in runtime settings
+	bool oscilloscopeEnabled = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
+	// Re-enable oscilloscope if VU meter is enabled and feature is on (handles case where displayOscilloscope
+	// was reset in focusRegained() but VU meter is still active)
+	if (displayVUMeter && oscilloscopeEnabled && activeModControllableModelStack.modControllable
+	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
+		if (!displayOscilloscope) {
+			displayOscilloscope = true;
+		}
+		renderOscilloscope(canvas);
+		return true;
+	}
+	// If oscilloscope should be displayed but conditions aren't met, disable it
+	if (displayOscilloscope
+	    && (!oscilloscopeEnabled || !displayVUMeter || !activeModControllableModelStack.modControllable
+	        || *activeModControllableModelStack.modControllable->getModKnobMode() != 0)) {
+		displayOscilloscope = false;
+	}
+	return false;
+}
+
+void View::requestOscilloscopeUpdateIfNeeded() {
+	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
+	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
+	constexpr uint32_t kOscilloscopeFrameSkip = 2;
+	// Cache runtime feature check to avoid redundant calls
+	bool oscilloscopeEnabled = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
+	if (displayOscilloscope && oscilloscopeEnabled && displayVUMeter && activeModControllableModelStack.modControllable
+	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
+		oscilloscopeFrameCounter++;
+		// Update every N frames for ~30fps (reduce CPU usage)
+		if ((oscilloscopeFrameCounter % kOscilloscopeFrameSkip) == 0) {
+			renderUIsForOled();
 		}
 	}
 }

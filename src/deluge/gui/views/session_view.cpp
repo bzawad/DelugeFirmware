@@ -1853,6 +1853,12 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		return;
 	}
 
+	// Check if oscilloscope should be displayed (same conditions as VU meter)
+	if (view.potentiallyRenderOscilloscope(canvas)) {
+		// Oscilloscope was rendered, skip normal rendering
+		return;
+	}
+
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
 		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip());
@@ -2154,6 +2160,9 @@ void SessionView::graphicsRoutine() {
 	if (view.potentiallyRenderVUMeter(PadLEDs::image)) {
 		PadLEDs::sendOutSidebarColours();
 	}
+
+	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
+	view.requestOscilloscopeUpdateIfNeeded();
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);

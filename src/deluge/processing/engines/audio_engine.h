@@ -21,6 +21,7 @@
 #include "dsp/compressor/rms_feedback.h"
 #include "dsp/envelope_follower/absolute_value.h"
 #include "model/output.h"
+#include <atomic>
 #include <cstdint>
 
 extern "C" {
@@ -211,4 +212,10 @@ extern uint32_t timeLastSideChainHit;
 extern int32_t sizeLastSideChainHit;
 extern StereoFloatSample approxRMSLevel;
 extern AbsValueFollower envelopeFollower;
+
+// Oscilloscope sample buffer
+constexpr size_t kOscilloscopeBufferSize = 256;
+extern int32_t oscilloscopeSampleBuffer[kOscilloscopeBufferSize];
+extern std::atomic<uint32_t> oscilloscopeWritePos;
+extern std::atomic<uint32_t> oscilloscopeSampleCount;
 } // namespace AudioEngine

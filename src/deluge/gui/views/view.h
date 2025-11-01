@@ -44,6 +44,10 @@ class MIDIDevice;
 class LearnedMIDI;
 class Kit;
 
+namespace deluge::hid::display::oled_canvas {
+class Canvas;
+}
+
 // A view is where the user can interact with the pads - song view, Clip view, automation view and keyboard view.
 // (Is that still a good description? This class is a bit of a mishmash of poorly organised code, sorry.)
 
@@ -146,6 +150,12 @@ public:
 	bool displayVUMeter;
 	bool potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]);
 
+	// oscilloscope rendering
+	bool displayOscilloscope;
+	uint32_t oscilloscopeFrameCounter;
+	bool potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas);
+	void requestOscilloscopeUpdateIfNeeded();
+
 	void getParameterNameFromModEncoder(int32_t whichModEncoder, char* parameterName);
 
 	bool isClipContext();
@@ -161,6 +171,9 @@ private:
 	int32_t cachedMaxYDisplayForVUMeterR;
 	void renderVUMeter(int32_t maxYDisplay, int32_t xDisplay, RGB thisImage[][kDisplayWidth + kSideBarWidth]);
 	bool renderedVUMeter;
+
+	// oscilloscope rendering
+	void renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas);
 
 	ModelStackWithAutoParam* getModelStackWithParam(int32_t whichModEncoder, bool& noteTailsAllowedBefore);
 };

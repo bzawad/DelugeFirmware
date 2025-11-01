@@ -195,6 +195,9 @@ void RuntimeFeatureSettings::init() {
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGridViewLoopPads],
 	                  STRING_FOR_COMMUNITY_FEATURE_GRID_VIEW_LOOP_PADS, "enableGridViewLoopPads",
 	                  RuntimeFeatureStateToggle::Off);
+	// Oscilloscope
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::Oscilloscope], STRING_FOR_COMMUNITY_FEATURE_OSCILLOSCOPE,
+	                  "oscilloscope", RuntimeFeatureStateToggle::On);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {
