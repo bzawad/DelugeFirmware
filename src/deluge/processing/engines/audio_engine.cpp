@@ -18,6 +18,7 @@
 #include "processing/engines/audio_engine.h"
 #include "definitions.h"
 #include "definitions_cxx.hpp"
+#include "deluge/model/settings/runtime_feature_settings.h"
 #include "dsp/reverb/reverb.hpp"
 #include "dsp/timestretch/time_stretcher.h"
 #include "extern.h"
@@ -619,28 +620,30 @@ void renderAudio(size_t numSamples) {
 	approxRMSLevel = envelopeFollower.calcApproxRMS(renderingBuffer);
 
 	// Sample audio for oscilloscope visualization (downsample for efficiency)
-	// Only sample if oscilloscope is likely to be displayed
-	// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~128-256 samples for display
-	// Sample every 8th sample to get ~5.5k samples/sec, downsample to display width
-	constexpr uint32_t kOscilloscopeSampleInterval = 8;
-	static uint32_t sampleCounter = 0;
-	sampleCounter++;
-	if (sampleCounter >= kOscilloscopeSampleInterval) {
-		sampleCounter = 0;
-		// Take a sample from the middle of the buffer for better representation
-		size_t midSample = numSamples / 2;
-		if (midSample < renderingBuffer.size()) {
-			// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
-			int32_t sampleL = renderingBuffer[midSample].l >> 16; // Convert Q31 to Q15 range
-			int32_t sampleR = renderingBuffer[midSample].r >> 16;
-			int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
+	// Only sample if oscilloscope feature is enabled to save CPU cycles
+	if (runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope)) {
+		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~128-256 samples for display
+		// Sample every 8th sample to get ~5.5k samples/sec, downsample to display width
+		constexpr uint32_t kOscilloscopeSampleInterval = 8;
+		static uint32_t sampleCounter = 0;
+		sampleCounter++;
+		if (sampleCounter >= kOscilloscopeSampleInterval) {
+			sampleCounter = 0;
+			// Take a sample from the middle of the buffer for better representation
+			size_t midSample = numSamples / 2;
+			if (midSample < renderingBuffer.size()) {
+				// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
+				int32_t sampleL = renderingBuffer[midSample].l >> 16; // Convert Q31 to Q15 range
+				int32_t sampleR = renderingBuffer[midSample].r >> 16;
+				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
 
-			// Write to circular buffer (thread-safe for single writer, single reader)
-			uint32_t writePos = oscilloscopeWritePos.load(std::memory_order_relaxed);
-			oscilloscopeSampleBuffer[writePos] = combined;
-			oscilloscopeWritePos.store((writePos + 1) % kOscilloscopeBufferSize, std::memory_order_release);
-			if (oscilloscopeSampleCount.load(std::memory_order_relaxed) < kOscilloscopeBufferSize) {
-				oscilloscopeSampleCount.fetch_add(1, std::memory_order_release);
+				// Write to circular buffer (thread-safe for single writer, single reader)
+				uint32_t writePos = oscilloscopeWritePos.load(std::memory_order_relaxed);
+				oscilloscopeSampleBuffer[writePos] = combined;
+				oscilloscopeWritePos.store((writePos + 1) % kOscilloscopeBufferSize, std::memory_order_release);
+				if (oscilloscopeSampleCount.load(std::memory_order_relaxed) < kOscilloscopeBufferSize) {
+					oscilloscopeSampleCount.fetch_add(1, std::memory_order_release);
+				}
 			}
 		}
 	}
