@@ -625,6 +625,7 @@ void renderAudio(size_t numSamples) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~128-256 samples for display
 		// Sample every 8th sample to get ~5.5k samples/sec, downsample to display width
 		constexpr uint32_t kOscilloscopeSampleInterval = 8;
+		constexpr uint32_t kQ31ToQ15Shift = 16; // Convert from Q31 to Q15 format (31-15 = 16 bits)
 		static uint32_t sampleCounter = 0;
 		sampleCounter++;
 		if (sampleCounter >= kOscilloscopeSampleInterval) {
@@ -633,8 +634,8 @@ void renderAudio(size_t numSamples) {
 			size_t midSample = numSamples / 2;
 			if (midSample < renderingBuffer.size()) {
 				// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
-				int32_t sampleL = renderingBuffer[midSample].l >> 16; // Convert Q31 to Q15 range
-				int32_t sampleR = renderingBuffer[midSample].r >> 16;
+				int32_t sampleL = renderingBuffer[midSample].l >> kQ31ToQ15Shift; // Convert Q31 to Q15 range
+				int32_t sampleR = renderingBuffer[midSample].r >> kQ31ToQ15Shift;
 				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
 
 				// Write to circular buffer (thread-safe for single writer, single reader)
