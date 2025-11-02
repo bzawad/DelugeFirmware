@@ -1900,9 +1900,9 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		return;
 	}
 
-	// Check if oscilloscope should be displayed (same conditions as VU meter)
-	if (view.potentiallyRenderOscilloscope(canvas)) {
-		// Oscilloscope was rendered, skip normal rendering
+	// Check if visualizer should be displayed (same conditions as VU meter)
+	if (view.potentiallyRenderVisualizer(canvas)) {
+		// Visualizer was rendered, skip normal rendering
 		return;
 	}
 
@@ -2209,8 +2209,8 @@ void SessionView::graphicsRoutine() {
 		PadLEDs::sendOutSidebarColours();
 	}
 
-	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
-	view.requestOscilloscopeUpdateIfNeeded();
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
+	view.requestVisualizerUpdateIfNeeded();
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);

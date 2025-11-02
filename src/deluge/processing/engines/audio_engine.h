@@ -217,11 +217,11 @@ extern deluge::dsp::StereoSample<float> approxRMSLevel;
 extern deluge::dsp::AbsValueFollower envelopeFollower;
 extern TaskID routine_task_id;
 
-// Oscilloscope sample buffer
-constexpr size_t kOscilloscopeBufferSize = 256;
-extern int32_t oscilloscopeSampleBuffer[kOscilloscopeBufferSize];
-extern std::atomic<uint32_t> oscilloscopeWritePos;
-extern std::atomic<uint32_t> oscilloscopeSampleCount;
+// Visualizer sample buffer
+constexpr size_t kVisualizerBufferSize = 256;
+extern int32_t visualizerSampleBuffer[kVisualizerBufferSize];
+extern std::atomic<uint32_t> visualizerWritePos;
+extern std::atomic<uint32_t> visualizerSampleCount;
 
 void feedReverbBackdoorForGrain(int index, q31_t value);
 

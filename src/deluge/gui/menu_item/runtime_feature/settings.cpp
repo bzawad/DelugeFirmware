@@ -50,7 +50,7 @@ SettingToggle menuAlternativeTapTempoBehaviour(RuntimeFeatureSettingType::Altern
 SettingToggle menuHorizontalMenus(RuntimeFeatureSettingType::HorizontalMenus);
 SettingToggle menuTrimFromStartOfAudioClip(RuntimeFeatureSettingType::TrimFromStartOfAudioClip);
 SettingToggle menuShowBatteryLevel(RuntimeFeatureSettingType::ShowBatteryLevel);
-SettingToggle menuOscilloscope(RuntimeFeatureSettingType::Oscilloscope);
+Setting menuVisualizer(RuntimeFeatureSettingType::Visualizer);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -76,7 +76,7 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuHorizontalMenus,
     &menuTrimFromStartOfAudioClip,
     &menuShowBatteryLevel,
-    &menuOscilloscope};
+    &menuVisualizer};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

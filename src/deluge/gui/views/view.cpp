@@ -112,8 +112,8 @@ View::View() {
 	renderedVUMeter = false;
 	cachedMaxYDisplayForVUMeterL = 255;
 	cachedMaxYDisplayForVUMeterR = 255;
-	displayOscilloscope = false;
-	oscilloscopeFrameCounter = 0;
+	displayVisualizer = false;
+	visualizerFrameCounter = 0;
 }
 
 void View::focusRegained() {
@@ -131,9 +131,9 @@ void View::focusRegained() {
 	renderedVUMeter = false;
 	cachedMaxYDisplayForVUMeterL = 255;
 	cachedMaxYDisplayForVUMeterR = 255;
-	// Also disable oscilloscope when switching views
-	displayOscilloscope = false;
-	oscilloscopeFrameCounter = 0;
+	// Also disable visualizer when switching views
+	displayVisualizer = false;
+	visualizerFrameCounter = 0;
 }
 
 extern GlobalMIDICommand pendingGlobalMIDICommandNumClustersWritten;
@@ -1494,20 +1494,22 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 					// are we pressing the same button that is currently selected
 					if (*activeModControllableModelStack.modControllable->getModKnobMode() == whichButton) {
 						// you just pressed the volume mod button and it was already selected previously
-						// toggle displaying VU Meter and oscilloscope on / off
+						// toggle displaying VU Meter and visualizer on / off
 						if (whichButton == 0) {
 							// Store previous state to determine if we need to refresh OLED when disabling
-							bool oscilloscopeWasDisplayed =
-							    displayOscilloscope
-							    && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
+							bool visualizerWasDisplayed =
+							    displayVisualizer
+							    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
+							           == RuntimeFeatureStateVisualizer::VisualizerWaveform;
 							displayVUMeter = !displayVUMeter;
-							// Oscilloscope follows VU meter toggle only if oscilloscope feature is enabled
-							displayOscilloscope =
-							    displayVUMeter && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
-							// Refresh OLED if oscilloscope was previously displayed (need to show normal view when
+							// Visualizer follows VU meter toggle only if visualizer feature is enabled in Waveform mode
+							displayVisualizer = displayVUMeter
+							                    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
+							                           == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+							// Refresh OLED if visualizer was previously displayed (need to show normal view when
 							// disabling)
-							if (oscilloscopeWasDisplayed) {
-								renderUIsForOled(); // refresh OLED to clear oscilloscope
+							if (visualizerWasDisplayed) {
+								renderUIsForOled(); // refresh OLED to clear visualizer
 							}
 						}
 					}
@@ -1515,9 +1517,9 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 					if (renderedVUMeter) {
 						uiNeedsRendering(rootUI, 0); // only render sidebar
 					}
-					// refresh OLED if oscilloscope is now displayed (when enabling)
-					if (displayOscilloscope) {
-						renderUIsForOled(); // refresh OLED to show oscilloscope
+					// refresh OLED if visualizer is now displayed (when enabling)
+					if (displayVisualizer) {
+						renderUIsForOled(); // refresh OLED to show visualizer
 					}
 				}
 
@@ -1800,10 +1802,10 @@ bool View::potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]) 
 
 	// if we made it here then we haven't rendered a VU meter in the sidebar
 	renderedVUMeter = false;
-	// Also disable oscilloscope when VU meter is not being rendered
-	if (!displayVUMeter && displayOscilloscope) {
-		displayOscilloscope = false;
-		// Trigger OLED refresh to clear oscilloscope and show normal view
+	// Also disable visualizer when VU meter is not being rendered
+	if (!displayVUMeter && displayVisualizer) {
+		displayVisualizer = false;
+		// Trigger OLED refresh to clear visualizer and show normal view
 		RootUI* rootUI = getRootUI();
 		if (rootUI && !rootUIIsClipMinderScreen()) {
 			renderUIsForOled();
@@ -1869,8 +1871,8 @@ void View::renderVUMeter(int32_t maxYDisplay, int32_t xDisplay, RGB thisImage[][
 	}
 }
 
-/// Render oscilloscope waveform on OLED display
-void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas) {
+/// Render visualizer waveform on OLED display
+void View::renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	using namespace deluge::hid::display;
 	using namespace AudioEngine;
 
@@ -1885,7 +1887,7 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
 
 	// Read sample count atomically (single read is safe)
-	uint32_t sampleCount = oscilloscopeSampleCount.load(std::memory_order_acquire);
+	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
 	if (sampleCount < 2) {
 		// Not enough samples yet, draw empty
 		return;
@@ -1901,9 +1903,9 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 
 	// Start reading from write position and work backwards to get most recent samples
 	uint32_t readStartPos;
-	if (sampleCount >= kOscilloscopeBufferSize) {
+	if (sampleCount >= kVisualizerBufferSize) {
 		// Buffer is full, oldest sample is at writePos (next to be overwritten)
-		readStartPos = oscilloscopeWritePos.load(std::memory_order_acquire);
+		readStartPos = visualizerWritePos.load(std::memory_order_acquire);
 	}
 	else {
 		// Buffer not full, start from beginning
@@ -1918,8 +1920,8 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	uint32_t remainderAccumulator = 0;
 	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
 		// Calculate buffer index directly to avoid nested loop
-		uint32_t bufferIndex = (readStartPos + sampleIndex) % kOscilloscopeBufferSize;
-		int32_t sample = oscilloscopeSampleBuffer[bufferIndex];
+		uint32_t bufferIndex = (readStartPos + sampleIndex) % kVisualizerBufferSize;
+		int32_t sample = visualizerSampleBuffer[bufferIndex];
 		if (sample < minVal)
 			minVal = sample;
 		if (sample > maxVal)
@@ -1956,7 +1958,7 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 		}
 	}
 
-	// Clear the oscilloscope area before drawing to prevent ghosting from previous frames
+	// Clear the visualizer area before drawing to prevent ghosting from previous frames
 	// maxY is exclusive, so add 1 to include the bottom margin
 	canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
 	                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
@@ -1988,9 +1990,9 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 
 	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
 		// Calculate buffer index directly to avoid nested loop
-		uint32_t bufferIndex = (readStartPos + sampleIndex) % kOscilloscopeBufferSize;
+		uint32_t bufferIndex = (readStartPos + sampleIndex) % kVisualizerBufferSize;
 		// Get sample value
-		int32_t sample = oscilloscopeSampleBuffer[bufferIndex];
+		int32_t sample = visualizerSampleBuffer[bufferIndex];
 
 		// Calculate Y position (center at kCenterY, scale relative to min/max)
 		// Convert from Q15 range to normalized position
@@ -2041,40 +2043,42 @@ void View::renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas)
 	OLED::markChanged();
 }
 
-/// Check if oscilloscope should be rendered and render it if conditions are met
-bool View::potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas) {
-	// Check if oscilloscope feature is enabled in runtime settings
-	bool oscilloscopeEnabled = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
-	// Re-enable oscilloscope if VU meter is enabled and feature is on (handles case where displayOscilloscope
+/// Check if visualizer should be rendered and render it if conditions are met
+bool View::potentiallyRenderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	// Check if visualizer feature is enabled in Waveform mode in runtime settings
+	bool visualizerEnabled = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
+	                         == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+	// Re-enable visualizer if VU meter is enabled and feature is in Waveform mode (handles case where displayVisualizer
 	// was reset in focusRegained() but VU meter is still active)
-	if (displayVUMeter && oscilloscopeEnabled && activeModControllableModelStack.modControllable
+	if (displayVUMeter && visualizerEnabled && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
-		if (!displayOscilloscope) {
-			displayOscilloscope = true;
+		if (!displayVisualizer) {
+			displayVisualizer = true;
 		}
-		renderOscilloscope(canvas);
+		renderVisualizer(canvas);
 		return true;
 	}
-	// If oscilloscope should be displayed but conditions aren't met, disable it
-	if (displayOscilloscope
-	    && (!oscilloscopeEnabled || !displayVUMeter || !activeModControllableModelStack.modControllable
+	// If visualizer should be displayed but conditions aren't met, disable it
+	if (displayVisualizer
+	    && (!visualizerEnabled || !displayVUMeter || !activeModControllableModelStack.modControllable
 	        || *activeModControllableModelStack.modControllable->getModKnobMode() != 0)) {
-		displayOscilloscope = false;
+		displayVisualizer = false;
 	}
 	return false;
 }
 
-void View::requestOscilloscopeUpdateIfNeeded() {
-	// Request OLED refresh for oscilloscope if active (ensures continuous updates)
+void View::requestVisualizerUpdateIfNeeded() {
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
 	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
-	constexpr uint32_t kOscilloscopeFrameSkip = 2;
+	constexpr uint32_t kVisualizerFrameSkip = 2;
 	// Cache runtime feature check to avoid redundant calls
-	bool oscilloscopeEnabled = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope);
-	if (displayOscilloscope && oscilloscopeEnabled && displayVUMeter && activeModControllableModelStack.modControllable
+	bool visualizerEnabled = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
+	                         == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+	if (displayVisualizer && visualizerEnabled && displayVUMeter && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
-		oscilloscopeFrameCounter++;
+		visualizerFrameCounter++;
 		// Update every N frames for ~30fps (reduce CPU usage)
-		if ((oscilloscopeFrameCounter % kOscilloscopeFrameSkip) == 0) {
+		if ((visualizerFrameCounter % kVisualizerFrameSkip) == 0) {
 			renderUIsForOled();
 		}
 	}

@@ -154,10 +154,10 @@ deluge::dsp::StereoSample<float> approxRMSLevel{0};
 deluge::dsp::AbsValueFollower envelopeFollower{};
 int32_t timeLastPopup{0};
 
-// Oscilloscope sample buffer
-alignas(CACHE_LINE_SIZE) int32_t oscilloscopeSampleBuffer[kOscilloscopeBufferSize]{};
-std::atomic<uint32_t> oscilloscopeWritePos{0};
-std::atomic<uint32_t> oscilloscopeSampleCount{0};
+// Visualizer sample buffer
+alignas(CACHE_LINE_SIZE) int32_t visualizerSampleBuffer[kVisualizerBufferSize]{};
+std::atomic<uint32_t> visualizerWritePos{0};
+std::atomic<uint32_t> visualizerSampleCount{0};
 
 SoundDrum* sampleForPreview;
 ParamManagerForTimeline* paramManagerForSamplePreview;
@@ -619,16 +619,17 @@ void renderAudio(size_t numSamples) {
 
 	approxRMSLevel = envelopeFollower.calcApproxRMS(renderingBuffer);
 
-	// Sample audio for oscilloscope visualization (downsample for efficiency)
-	// Only sample if oscilloscope feature is enabled to save CPU cycles
-	if (runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::Oscilloscope)) {
+	// Sample audio for visualizer visualization (downsample for efficiency)
+	// Only sample if visualizer feature is enabled in Waveform mode to save CPU cycles
+	if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
+	    == RuntimeFeatureStateVisualizer::VisualizerWaveform) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~128-256 samples for display
 		// Sample every 8th sample to get ~5.5k samples/sec, downsample to display width
-		constexpr uint32_t kOscilloscopeSampleInterval = 8;
+		constexpr uint32_t kVisualizerSampleInterval = 8;
 		constexpr uint32_t kQ31ToQ15Shift = 16; // Convert from Q31 to Q15 format (31-15 = 16 bits)
 		static uint32_t sampleCounter = 0;
 		sampleCounter++;
-		if (sampleCounter >= kOscilloscopeSampleInterval) {
+		if (sampleCounter >= kVisualizerSampleInterval) {
 			sampleCounter = 0;
 			// Take a sample from the middle of the buffer for better representation
 			size_t midSample = numSamples / 2;
@@ -639,11 +640,11 @@ void renderAudio(size_t numSamples) {
 				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
 
 				// Write to circular buffer (thread-safe for single writer, single reader)
-				uint32_t writePos = oscilloscopeWritePos.load(std::memory_order_relaxed);
-				oscilloscopeSampleBuffer[writePos] = combined;
-				oscilloscopeWritePos.store((writePos + 1) % kOscilloscopeBufferSize, std::memory_order_release);
-				if (oscilloscopeSampleCount.load(std::memory_order_relaxed) < kOscilloscopeBufferSize) {
-					oscilloscopeSampleCount.fetch_add(1, std::memory_order_release);
+				uint32_t writePos = visualizerWritePos.load(std::memory_order_relaxed);
+				visualizerSampleBuffer[writePos] = combined;
+				visualizerWritePos.store((writePos + 1) % kVisualizerBufferSize, std::memory_order_release);
+				if (visualizerSampleCount.load(std::memory_order_relaxed) < kVisualizerBufferSize) {
+					visualizerSampleCount.fetch_add(1, std::memory_order_release);
 				}
 			}
 		}

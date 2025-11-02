@@ -102,6 +102,24 @@ static void SetupEmulatedDisplaySetting(RuntimeFeatureSetting& setting, deluge::
 	};
 }
 
+static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n::String displayName,
+                                   std::string_view xmlName, RuntimeFeatureStateVisualizer def) {
+	setting.displayName = displayName;
+	setting.xmlName = xmlName;
+	setting.value = static_cast<uint32_t>(def);
+
+	setting.options = {
+	    {
+	        .displayName = "Off",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerOff,
+	    },
+	    {
+	        .displayName = display->haveOLED() ? "Waveform" : "WAVE",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerWaveform,
+	    },
+	};
+}
+
 void RuntimeFeatureSettings::init() {
 	using enum deluge::l10n::String;
 	// Drum randomizer
@@ -201,9 +219,9 @@ void RuntimeFeatureSettings::init() {
 	                  STRING_FOR_COMMUNITY_FEATURE_SHOW_BATTERY_LEVEL, "showBatteryLevel",
 	                  RuntimeFeatureStateToggle::On);
 
-	// Oscilloscope
-	SetupOnOffSetting(settings[RuntimeFeatureSettingType::Oscilloscope], STRING_FOR_COMMUNITY_FEATURE_OSCILLOSCOPE,
-	                  "oscilloscope", RuntimeFeatureStateToggle::On);
+	// Visualizer
+	SetupVisualizerSetting(settings[RuntimeFeatureSettingType::Visualizer], STRING_FOR_COMMUNITY_FEATURE_VISUALIZER,
+	                       "visualizer", RuntimeFeatureStateVisualizer::VisualizerOff);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile() {
@@ -261,6 +279,14 @@ void RuntimeFeatureSettings::readSettingsFromFile() {
 
 			currentValue = reader.readTagOrAttributeValueInt();
 			reader.exitTag();
+
+			// Migration: Convert old "oscilloscope" setting to "visualizer"
+			if (strcmp(currentName.get(), "oscilloscope") == 0) {
+				// Migrate old oscilloscope setting: On (1) -> Waveform (1), Off (0) -> Off (0)
+				settings[RuntimeFeatureSettingType::Visualizer].value =
+				    currentValue; // Values align: Off=0, On/Waveform=1
+				continue;         // Skip adding to unknownSettings
+			}
 
 			bool found = false;
 			for (auto& setting : settings) {

@@ -146,11 +146,11 @@ public:
 	bool displayVUMeter;
 	bool potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]);
 
-	// oscilloscope rendering
-	bool displayOscilloscope;
-	uint32_t oscilloscopeFrameCounter;
-	bool potentiallyRenderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas);
-	void requestOscilloscopeUpdateIfNeeded();
+	// visualizer rendering
+	bool displayVisualizer;
+	uint32_t visualizerFrameCounter;
+	bool potentiallyRenderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas);
+	void requestVisualizerUpdateIfNeeded();
 
 	void getParameterNameFromModEncoder(int32_t whichModEncoder, char* parameterName);
 
@@ -168,8 +168,8 @@ private:
 	void renderVUMeter(int32_t maxYDisplay, int32_t xDisplay, RGB thisImage[][kDisplayWidth + kSideBarWidth]);
 	bool renderedVUMeter;
 
-	// oscilloscope rendering
-	void renderOscilloscope(deluge::hid::display::oled_canvas::Canvas& canvas);
+	// visualizer rendering
+	void renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas);
 
 	// mod encoder action
 	void modEncoderAction_nonExistentParam(int32_t whichModEncoder, int32_t offset,
