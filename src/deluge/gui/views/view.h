@@ -170,6 +170,8 @@ private:
 
 	// visualizer rendering
 	void renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas);
+	void renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& canvas);
+	void renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& canvas);
 
 	// mod encoder action
 	void modEncoderAction_nonExistentParam(int32_t whichModEncoder, int32_t offset,

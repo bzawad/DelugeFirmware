@@ -16,8 +16,10 @@
  */
 
 #include "gui/views/view.h"
+#include "NE10.h"
 #include "definitions_cxx.hpp"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/fft/fft_config_manager.h"
 #include "dsp/reverb/reverb.hpp"
 #include "extern.h"
 #include "gui/colour/colour.h"
@@ -86,6 +88,8 @@
 #include "storage/file_item.h"
 #include "storage/flash_storage.h"
 #include "storage/storage_manager.h"
+#include "util/functions.h"
+#include <cmath>
 
 namespace params = deluge::modulation::params;
 namespace encoders = deluge::hid::encoders;
@@ -1497,15 +1501,16 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 						// toggle displaying VU Meter and visualizer on / off
 						if (whichButton == 0) {
 							// Store previous state to determine if we need to refresh OLED when disabling
-							bool visualizerWasDisplayed =
-							    displayVisualizer
-							    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-							           == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+							uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+							bool visualizerEnabled =
+							    (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+							    || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerBars)
+							    || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum);
+							bool visualizerWasDisplayed = displayVisualizer && visualizerEnabled;
 							displayVUMeter = !displayVUMeter;
-							// Visualizer follows VU meter toggle only if visualizer feature is enabled in Waveform mode
-							displayVisualizer = displayVUMeter
-							                    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-							                           == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+							// Visualizer follows VU meter toggle only if visualizer feature is enabled in an active
+							// mode
+							displayVisualizer = displayVUMeter && visualizerEnabled;
 							// Refresh OLED if visualizer was previously displayed (need to show normal view when
 							// disabling)
 							if (visualizerWasDisplayed) {
@@ -1871,8 +1876,70 @@ void View::renderVUMeter(int32_t maxYDisplay, int32_t xDisplay, RGB thisImage[][
 	}
 }
 
-/// Render visualizer waveform on OLED display
+// Static buffers for spectrum visualizer FFT computation
+namespace {
+constexpr int32_t kSpectrumFFTSize = 256;
+constexpr int32_t kSpectrumFFTMagnitude = 8;                            // 2^8 = 256
+constexpr int32_t kSpectrumFFTOutputSize = (kSpectrumFFTSize >> 1) + 1; // 129 bins
+
+// Static FFT config (lazily initialized)
+ne10_fft_r2c_cfg_int32_t spectrumFFTConfig = nullptr;
+
+// Static FFT buffers
+int32_t spectrumFFTInput[kSpectrumFFTSize];
+ne10_fft_cpx_int32_t spectrumFFTOutput[kSpectrumFFTOutputSize];
+
+// Precomputed Hanning window in Q31 format
+int32_t spectrumHanningWindow[kSpectrumFFTSize];
+
+// Initialize Hanning window coefficients (called once)
+void initSpectrumHanningWindow() {
+	static bool initialized = false;
+	if (initialized) {
+		return;
+	}
+	initialized = true;
+
+	constexpr float kPi = 3.14159265358979323846f;
+	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
+		// Hanning window: w(n) = 0.5 * (1 - cos(2πn/(N-1)))
+		// Convert to Q31 format (multiply by 2^31)
+		float windowValue = 0.5f * (1.0f - std::cos(2.0f * kPi * i / (kSpectrumFFTSize - 1)));
+		spectrumHanningWindow[i] = static_cast<int32_t>(windowValue * 2147483648.0f); // 2^31
+	}
+}
+
+// Get or initialize FFT config
+ne10_fft_r2c_cfg_int32_t getSpectrumFFTConfig() {
+	if (spectrumFFTConfig == nullptr) {
+		spectrumFFTConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
+	}
+	return spectrumFFTConfig;
+}
+} // namespace
+
+/// Render visualizer waveform or spectrum on OLED display
 void View::renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	using namespace deluge::hid::display;
+	using namespace AudioEngine;
+
+	// Check visualizer mode
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+
+	if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
+		// Render spectrum using FFT
+		renderVisualizerSpectrum(canvas);
+		return;
+	}
+	else {
+		// Default to waveform rendering (for VisualizerWaveform and VisualizerBars)
+		renderVisualizerWaveform(canvas);
+		return;
+	}
+}
+
+/// Render visualizer waveform on OLED display
+void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	using namespace deluge::hid::display;
 	using namespace AudioEngine;
 
@@ -2043,13 +2110,171 @@ void View::renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	OLED::markChanged();
 }
 
+/// Render visualizer spectrum on OLED display using FFT
+void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	using namespace deluge::hid::display;
+	using namespace AudioEngine;
+
+	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
+	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
+	constexpr int32_t kMargin = 2;
+	constexpr int32_t kGraphMinX = kMargin;
+	constexpr int32_t kGraphMaxX = kDisplayWidth - kMargin - 1;
+	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
+	constexpr int32_t kGraphMinY = OLED_MAIN_TOPMOST_PIXEL + kMargin;
+	constexpr int32_t kGraphMaxY = OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1;
+
+	// Initialize Hanning window (one-time initialization)
+	initSpectrumHanningWindow();
+
+	// Read sample count atomically (single read is safe)
+	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
+	if (sampleCount < kSpectrumFFTSize) {
+		// Not enough samples yet, draw empty
+		return;
+	}
+
+	// Get FFT config (lazy initialization)
+	ne10_fft_r2c_cfg_int32_t fftConfig = getSpectrumFFTConfig();
+	if (fftConfig == nullptr) {
+		// FFT config not available, draw empty
+		return;
+	}
+
+	// Read most recent 256 samples from circular buffer
+	uint32_t readStartPos;
+	if (sampleCount >= kVisualizerBufferSize) {
+		// Buffer is full, oldest sample is at writePos (next to be overwritten)
+		readStartPos = visualizerWritePos.load(std::memory_order_acquire);
+	}
+	else {
+		// Buffer not full, start from beginning
+		readStartPos = 0;
+	}
+
+	// Copy samples and apply Hanning window
+	// Samples are in Q15 format, window is in Q31 format
+	// Result: (Q15 * Q31) >> 16 = Q15
+	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
+		uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
+		int32_t sample = visualizerSampleBuffer[bufferIndex]; // Q15
+
+		// Apply Hanning window: multiply Q15 sample by Q31 window, shift right by 16
+		// Use 64-bit intermediate to prevent overflow
+		int64_t windowedSample = (static_cast<int64_t>(sample) * static_cast<int64_t>(spectrumHanningWindow[i])) >> 16;
+		spectrumFFTInput[i] = static_cast<int32_t>(windowedSample);
+	}
+
+	// Perform FFT (real-to-complex)
+	ne10_fft_r2c_1d_int32_neon(spectrumFFTOutput, spectrumFFTInput, fftConfig, false);
+
+	// Fixed reference magnitude for fixed-amplitude display aligned with UV meter
+	// UV meter shows clipping at approxRMSLevel = 16.7 (log(2^24))
+	// We want spectrum to align: when UV is in red (clipping), spectrum should be at peak
+	// This value represents the expected FFT magnitude when audio is at clipping level
+	// Using a fixed reference means actual signal levels are displayed consistently
+	// FFT input is Q15, output is Q31 complex, magnitude from fastPythag scales accordingly
+	// This value needs to be calibrated so that when audio reaches clipping (UV in red),
+	// the spectrum reaches peak. Higher value = more headroom, lower value = more sensitive
+	// Increased significantly to prevent peaking at normal volumes
+	// FFT magnitudes from Q31 output can be very large, so this needs to be quite high
+	constexpr int32_t kFixedReferenceMagnitude = 50000000;
+
+	// Check for silence by examining a few representative bins
+	// If all bins are very small, draw baseline
+	constexpr int32_t kSilenceThreshold = 100; // Threshold for detecting silence
+	int32_t sampleMagnitude =
+	    fastPythag(spectrumFFTOutput[kSpectrumFFTOutputSize / 2].r, spectrumFFTOutput[kSpectrumFFTOutputSize / 2].i);
+	if (sampleMagnitude < kSilenceThreshold) {
+		// Check a few more bins to confirm silence
+		bool isSilent = true;
+		for (int32_t i = 0; i < kSpectrumFFTOutputSize; i += 16) {
+			int32_t mag = fastPythag(spectrumFFTOutput[i].r, spectrumFFTOutput[i].i);
+			if (mag >= kSilenceThreshold) {
+				isSilent = false;
+				break;
+			}
+		}
+		if (isSilent) {
+			canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
+			// Draw baseline at bottom (zero line for spectrum)
+			canvas.drawHorizontalLine(kGraphMaxY, kGraphMinX, kGraphMaxX);
+			OLED::markChanged();
+			return;
+		}
+	}
+
+	// Clear the visualizer area before drawing
+	canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
+
+	// Render spectrum line graph (low frequencies on left, high on right)
+	int32_t lastX = -1;
+	int32_t lastY = -1;
+	bool isFirstPoint = true;
+
+	// Map frequency bins to display pixels
+	// Use all 129 bins, but map to 124 pixels (may need to downsample or interpolate)
+	constexpr int32_t kNumBins = kSpectrumFFTOutputSize;        // 129 bins
+	constexpr int32_t kNumPixels = kGraphMaxX - kGraphMinX + 1; // 124 pixels
+
+	for (int32_t pixel = 0; pixel < kNumPixels; pixel++) {
+		// Map pixel to frequency bin (linear mapping: low freq -> left, high freq -> right)
+		// Pixel 0 -> bin 0, pixel kNumPixels-1 -> bin kNumBins-1
+		int32_t binIndex = (pixel * (kNumBins - 1)) / (kNumPixels - 1);
+
+		// Calculate magnitude for this bin
+		int32_t magnitude = fastPythag(spectrumFFTOutput[binIndex].r, spectrumFFTOutput[binIndex].i);
+
+		// Scale magnitude linearly to fixed reference (fixed-amplitude display)
+		// Map magnitude from [0, kFixedReferenceMagnitude] to [0, kGraphHeight]
+		// Using fixed reference means actual signal levels are displayed, not auto-scaled
+		int32_t scaledHeight = 0;
+		if (magnitude > 0) {
+			// Scale linearly: height = (magnitude * kGraphHeight) / kFixedReferenceMagnitude
+			// Use 64-bit intermediate to prevent overflow
+			scaledHeight = static_cast<int32_t>((static_cast<int64_t>(magnitude) * static_cast<int64_t>(kGraphHeight))
+			                                    / kFixedReferenceMagnitude);
+		}
+
+		// Convert to pixel Y position (spectrum: baseline at bottom, magnitude grows upward)
+		// When magnitude is 0, y should be at bottom (kGraphMaxY)
+		// When magnitude reaches fixed reference, y should be at top (kGraphMinY)
+		// Clamp scaledHeight to graph height to prevent overflow
+		scaledHeight = std::min(scaledHeight, kGraphHeight);
+		int32_t y = kGraphMaxY - scaledHeight;
+		// Clamp to valid display range (kGraphMinY = top, kGraphMaxY = bottom)
+		y = std::clamp(y, kGraphMinY, kGraphMaxY);
+
+		// X position
+		int32_t x = kGraphMinX + pixel;
+
+		// Draw line from previous point to current point
+		if (!isFirstPoint && lastX >= 0 && lastX != x) {
+			canvas.drawLine(lastX, lastY, x, y);
+		}
+		else if (isFirstPoint) {
+			// First point, just draw a pixel
+			canvas.drawPixel(x, y);
+			isFirstPoint = false;
+		}
+
+		lastX = x;
+		lastY = y;
+	}
+
+	// Mark OLED as changed so it gets sent to display
+	OLED::markChanged();
+}
+
 /// Check if visualizer should be rendered and render it if conditions are met
 bool View::potentiallyRenderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
-	// Check if visualizer feature is enabled in Waveform mode in runtime settings
-	bool visualizerEnabled = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-	                         == RuntimeFeatureStateVisualizer::VisualizerWaveform;
-	// Re-enable visualizer if VU meter is enabled and feature is in Waveform mode (handles case where displayVisualizer
-	// was reset in focusRegained() but VU meter is still active)
+	// Check if visualizer feature is enabled in Waveform, Bars, or Spectrum mode in runtime settings
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerBars)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum);
+	// Re-enable visualizer if VU meter is enabled and feature is in an active mode (handles case where
+	// displayVisualizer was reset in focusRegained() but VU meter is still active)
 	if (displayVUMeter && visualizerEnabled && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		if (!displayVisualizer) {
@@ -2072,8 +2297,18 @@ void View::requestVisualizerUpdateIfNeeded() {
 	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
 	constexpr uint32_t kVisualizerFrameSkip = 2;
 	// Cache runtime feature check to avoid redundant calls
-	bool visualizerEnabled = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-	                         == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerBars)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum);
+
+	// Re-enable visualizer if conditions are met (handles case where displayVisualizer was reset)
+	// This ensures the visualizer comes back when VU meter is re-enabled
+	if (!displayVisualizer && visualizerEnabled && displayVUMeter && activeModControllableModelStack.modControllable
+	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
+		displayVisualizer = true;
+	}
+
 	if (displayVisualizer && visualizerEnabled && displayVUMeter && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		visualizerFrameCounter++;

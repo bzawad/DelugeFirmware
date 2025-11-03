@@ -620,9 +620,11 @@ void renderAudio(size_t numSamples) {
 	approxRMSLevel = envelopeFollower.calcApproxRMS(renderingBuffer);
 
 	// Sample audio for visualizer visualization (downsample for efficiency)
-	// Only sample if visualizer feature is enabled in Waveform mode to save CPU cycles
-	if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-	    == RuntimeFeatureStateVisualizer::VisualizerWaveform) {
+	// Only sample if visualizer feature is enabled in Waveform, Bars, or Spectrum mode to save CPU cycles
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform
+	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerBars
+	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~128-256 samples for display
 		// Sample every 8th sample to get ~5.5k samples/sec, downsample to display width
 		constexpr uint32_t kVisualizerSampleInterval = 8;
