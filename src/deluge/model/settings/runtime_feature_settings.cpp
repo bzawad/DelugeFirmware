@@ -121,6 +121,10 @@ static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n:
 	        .displayName = display->haveOLED() ? "Spectrum" : "SPEC",
 	        .value = RuntimeFeatureStateVisualizer::VisualizerSpectrum,
 	    },
+	    {
+	        .displayName = display->haveOLED() ? "Equalizer" : "EQ",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerEqualizer,
+	    },
 	};
 }
 

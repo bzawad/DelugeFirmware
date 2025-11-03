@@ -44,8 +44,8 @@ enum RuntimeFeatureStateEmulatedDisplay : uint32_t { Hardware = 0, Toggle = 1, O
 enum RuntimeFeatureStateVisualizer : uint32_t {
 	VisualizerOff = 0,
 	VisualizerWaveform = 1,
-	VisualizerBars = 2,
-	VisualizerSpectrum = 3
+	VisualizerSpectrum = 2,
+	VisualizerEqualizer = 3
 };
 
 /// Every setting needs to be declared in here
