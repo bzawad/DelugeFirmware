@@ -1919,17 +1919,18 @@ ne10_fft_r2c_cfg_int32_t getSpectrumFFTConfig() {
 
 // Static peak tracking arrays for equalizer visualizer
 // Store peak heights in normalized 0-1 range (like reference) for proper decay scaling
-constexpr int32_t kEqualizerNumBars = 16;
+constexpr int32_t kEqualizerNumBars = 8;
 float equalizerPeakHeights[kEqualizerNumBars] = {0.0f};
 float equalizerPeakDecay[kEqualizerNumBars] = {0.0f};
 
 // Peak decay rate constant - matches reference implementation exactly
 constexpr float kEqualizerPeakDecayRate = 0.005f; // Same as PEAK_DECAY_RATE in reference
 
-// 16 frequency band center frequencies (Hz) - standard equalizer bands
-constexpr float kEqualizerFrequencies[kEqualizerNumBars] = {20.0f,   31.0f,   50.0f,    80.0f,   125.0f,  200.0f,
-                                                            315.0f,  500.0f,  800.0f,   1250.0f, 2000.0f, 3150.0f,
-                                                            5000.0f, 8000.0f, 12500.0f, 16000.0f};
+// 8 frequency band center frequencies (Hz) - standard equalizer bands
+// Band 1: 31 Hz (Sub-bass), 2: 63 Hz (Bass body), 3: 125 Hz (Upper bass), 4: 250 Hz (Low mids),
+// 5: 500 Hz (Midrange), 6: 1 kHz (Presence), 7: 2 kHz (Upper mids), 8: 8 kHz (Treble/air)
+constexpr float kEqualizerFrequencies[kEqualizerNumBars] = {31.0f,  63.0f,   125.0f,  250.0f,
+                                                            500.0f, 1000.0f, 2000.0f, 8000.0f};
 
 } // namespace
 
@@ -2219,18 +2220,48 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	int32_t lastY = -1;
 	bool isFirstPoint = true;
 
-	// Map frequency bins to display pixels
-	// Use all 129 bins, but map to 124 pixels (may need to downsample or interpolate)
-	constexpr int32_t kNumBins = kSpectrumFFTOutputSize;        // 129 bins
-	constexpr int32_t kNumPixels = kGraphMaxX - kGraphMinX + 1; // 124 pixels
+	// Map frequency bins to display pixels using logarithmic frequency scale
+	// This makes bass frequencies (20-200 Hz) take up more screen space, which is more musical
+	// since human hearing is logarithmic
+	constexpr int32_t kNumBins = kSpectrumFFTOutputSize;                    // 129 bins
+	constexpr int32_t kNumPixels = kGraphMaxX - kGraphMinX + 1;             // 124 pixels
+	constexpr float kMinFrequency = 20.0f;                                  // Start at 20 Hz for bass
+	constexpr float kMaxFrequency = static_cast<float>(kSampleRate) / 2.0f; // Nyquist frequency
+
+	// Precompute logarithmic scale constant: log10(sample_rate / 2 / 20)
+	const float logScaleConstant = std::log10(kMaxFrequency / kMinFrequency);
 
 	for (int32_t pixel = 0; pixel < kNumPixels; pixel++) {
-		// Map pixel to frequency bin (linear mapping: low freq -> left, high freq -> right)
-		// Pixel 0 -> bin 0, pixel kNumPixels-1 -> bin kNumBins-1
-		int32_t binIndex = (pixel * (kNumBins - 1)) / (kNumPixels - 1);
+		// Map pixel to frequency using logarithmic scale
+		// Formula: x = log10(f / 20) / log10(sample_rate / 2 / 20)
+		// Rearranged: f = 20 * 10^(x * log10(sample_rate / 2 / 20))
+		float normalizedX = static_cast<float>(pixel) / static_cast<float>(kNumPixels - 1);
+		float frequency = kMinFrequency * std::pow(10.0f, normalizedX * logScaleConstant);
 
-		// Calculate magnitude for this bin
-		int32_t magnitude = fastPythag(spectrumFFTOutput[binIndex].r, spectrumFFTOutput[binIndex].i);
+		// Map frequency to FFT bin index
+		// Bin i represents frequency: f_i = i * sample_rate / kSpectrumFFTSize
+		// So: bin = frequency * kSpectrumFFTSize / sample_rate
+		float binFloat = frequency * static_cast<float>(kSpectrumFFTSize) / static_cast<float>(kSampleRate);
+
+		// Use linear interpolation between adjacent bins to avoid stepping artifacts
+		// when multiple pixels map to the same bin (especially at low frequencies)
+		int32_t binIndexLow = static_cast<int32_t>(std::floor(binFloat));
+		int32_t binIndexHigh = binIndexLow + 1;
+		float fraction = binFloat - static_cast<float>(binIndexLow);
+
+		// Clamp bin indices to valid range
+		binIndexLow = std::max(static_cast<int32_t>(0), std::min(binIndexLow, kNumBins - 1));
+		binIndexHigh = std::max(static_cast<int32_t>(0), std::min(binIndexHigh, kNumBins - 1));
+
+		// Get magnitudes for both bins
+		int32_t magnitudeLow = fastPythag(spectrumFFTOutput[binIndexLow].r, spectrumFFTOutput[binIndexLow].i);
+		int32_t magnitudeHigh = fastPythag(spectrumFFTOutput[binIndexHigh].r, spectrumFFTOutput[binIndexHigh].i);
+
+		// Interpolate between the two bins
+		// Use 64-bit intermediate to prevent overflow during calculation
+		float magnitudeFloat =
+		    static_cast<float>(magnitudeLow) * (1.0f - fraction) + static_cast<float>(magnitudeHigh) * fraction;
+		int32_t magnitude = static_cast<int32_t>(magnitudeFloat);
 
 		// Scale magnitude linearly to fixed reference (fixed-amplitude display)
 		// Map magnitude from [0, kFixedReferenceMagnitude] to [0, kGraphHeight]
@@ -2356,9 +2387,9 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 		if (isSilent) {
 			canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 			// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
-			constexpr int32_t kBarWidth = 5;
+			constexpr int32_t kBarWidth = 10;
 			constexpr int32_t kBarGap = 2;
-			constexpr int32_t kEqualizerMargin = 7;
+			constexpr int32_t kEqualizerMargin = 15;
 			constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
 
 			for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
@@ -2375,18 +2406,18 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	// Clear the visualizer area before drawing
 	canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 
-	// Bar layout: 16 bars with even margins and clean pixel alignment
-	// Bar width: 5 px, Gap: 2 px, Margins: 7 px each side = 124 px total
-	constexpr int32_t kBarWidth = 5;
+	// Bar layout: 8 bars with even margins and clean pixel alignment
+	// Bar width: 10 px, Gap: 2 px, Margins: 15 px each side = 124 px total
+	constexpr int32_t kBarWidth = 10;
 	constexpr int32_t kBarGap = 2;
-	constexpr int32_t kEqualizerMargin = 7;
+	constexpr int32_t kEqualizerMargin = 15;
 	constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
 	constexpr int32_t kEqualizerContentEndX = kGraphMaxX - kEqualizerMargin;
 
 	// Calculate frequency resolution per bin
 	float freqResolution = kSampleRate / static_cast<float>(kSpectrumFFTSize);
 
-	// Render 16 frequency bars
+	// Render 8 frequency bars
 	for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
 		float centerFreq = kEqualizerFrequencies[bar];
 
@@ -2409,32 +2440,86 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 			upperFreq = (centerFreq + kEqualizerFrequencies[bar + 1]) / 2.0f;
 		}
 
-		// Convert frequencies to FFT bin indices
-		int32_t startBin = static_cast<int32_t>(lowerFreq / freqResolution);
-		int32_t endBin = static_cast<int32_t>(upperFreq / freqResolution);
+		// Convert frequencies to FFT bin indices (using floating point for interpolation)
+		float startBinFloat = lowerFreq / freqResolution;
+		float endBinFloat = upperFreq / freqResolution;
 
-		// Clamp indices to valid range
+		// Clamp to valid bin range
+		startBinFloat = std::max(0.0f, std::min(startBinFloat, static_cast<float>(kSpectrumFFTOutputSize - 1)));
+		endBinFloat = std::max(0.0f, std::min(endBinFloat, static_cast<float>(kSpectrumFFTOutputSize - 1)));
+		if (endBinFloat <= startBinFloat) {
+			endBinFloat = startBinFloat + 1.0f; // Ensure at least one bin worth of range
+		}
+		endBinFloat = std::min(endBinFloat, static_cast<float>(kSpectrumFFTOutputSize - 1));
+
+		// Use weighted interpolation to smooth transitions between bins
+		// Each bin's contribution is weighted by how much of the frequency range it covers
+		float weightedSum = 0.0f;
+		float totalWeight = 0.0f;
+
+		int32_t startBin = static_cast<int32_t>(std::floor(startBinFloat));
+		int32_t endBin = static_cast<int32_t>(std::floor(endBinFloat));
+
+		// Clamp integer bin indices for safety
 		startBin = std::max(static_cast<int32_t>(0), std::min(startBin, kSpectrumFFTOutputSize - 1));
 		endBin = std::max(static_cast<int32_t>(0), std::min(endBin, kSpectrumFFTOutputSize - 1));
-		if (endBin <= startBin) {
-			endBin = startBin + 1; // Ensure at least one bin
-		}
-		endBin = std::min(endBin, kSpectrumFFTOutputSize - 1); // Clamp again after adjustment
 
-		// Calculate average magnitude in this frequency range
-		int64_t sumMagnitude = 0;
-		int32_t binCount = 0;
-		for (int32_t bin = startBin; bin <= endBin; bin++) {
-			int32_t magnitude = fastPythag(spectrumFFTOutput[bin].r, spectrumFFTOutput[bin].i);
-			sumMagnitude += magnitude;
-			binCount++;
+		// Handle partial overlap with first bin
+		if (startBin >= 0 && startBin < kSpectrumFFTOutputSize) {
+			float binEndFreq = (startBin + 1) * freqResolution;
+			float overlapStart = std::max(lowerFreq, static_cast<float>(startBin) * freqResolution);
+			float overlapEnd = std::min(upperFreq, binEndFreq);
+			if (overlapEnd > overlapStart) {
+				float weight = (overlapEnd - overlapStart) / freqResolution;
+				int32_t magnitude = fastPythag(spectrumFFTOutput[startBin].r, spectrumFFTOutput[startBin].i);
+				weightedSum += static_cast<float>(magnitude) * weight;
+				totalWeight += weight;
+			}
 		}
 
-		// Average magnitude
-		int32_t avgMagnitude = 0;
-		if (binCount > 0) {
-			avgMagnitude = static_cast<int32_t>(sumMagnitude / binCount);
+		// Handle full bins in the middle (if any)
+		for (int32_t bin = startBin + 1; bin < endBin; bin++) {
+			if (bin >= 0 && bin < kSpectrumFFTOutputSize) {
+				int32_t magnitude = fastPythag(spectrumFFTOutput[bin].r, spectrumFFTOutput[bin].i);
+				weightedSum += static_cast<float>(magnitude);
+				totalWeight += 1.0f;
+			}
 		}
+
+		// Handle partial overlap with last bin
+		if (endBin >= 0 && endBin < kSpectrumFFTOutputSize && endBin > startBin) {
+			float binStartFreq = endBin * freqResolution;
+			float overlapStart = std::max(lowerFreq, binStartFreq);
+			float overlapEnd = std::min(upperFreq, (endBin + 1) * freqResolution);
+			if (overlapEnd > overlapStart) {
+				float weight = (overlapEnd - overlapStart) / freqResolution;
+				int32_t magnitude = fastPythag(spectrumFFTOutput[endBin].r, spectrumFFTOutput[endBin].i);
+				weightedSum += static_cast<float>(magnitude) * weight;
+				totalWeight += weight;
+			}
+		}
+
+		// Calculate weighted average magnitude
+		float avgMagnitudeFloat = 0.0f;
+		if (totalWeight > 0.0f) {
+			avgMagnitudeFloat = weightedSum / totalWeight;
+		}
+
+		// For very low frequencies where multiple bars map to the same FFT bin,
+		// apply a frequency-dependent scaling to create visual differentiation.
+		// This helps separate bars that would otherwise show identical values.
+		// Use a gentle logarithmic scaling based on center frequency.
+		float frequencyScale = 1.0f;
+		if (centerFreq < 200.0f) {
+			// For frequencies below 200 Hz, apply scaling: log(f/20) / log(200/20)
+			// This creates gradual separation between bars at low frequencies
+			float logFactor = std::log10(centerFreq / 20.0f) / std::log10(200.0f / 20.0f);
+			// Scale from 0.8 to 1.2 to create visible differences without being too extreme
+			frequencyScale = 0.8f + 0.4f * logFactor;
+			avgMagnitudeFloat *= frequencyScale;
+		}
+
+		int32_t avgMagnitude = static_cast<int32_t>(avgMagnitudeFloat);
 
 		// Scale magnitude to bar height (similar to spectrum visualizer)
 		// Map magnitude from [0, kFixedReferenceMagnitude] to [0, kGraphHeight]
