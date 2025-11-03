@@ -1979,8 +1979,8 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 		return;
 	}
 
-	// Determine how many samples to display - use more samples for better responsiveness
-	constexpr uint32_t kMaxDisplaySamples = 128; // Increased for better responsiveness
+	// Determine how many samples to display - use fewer samples for oscilloscope-style sparse display
+	constexpr uint32_t kMaxDisplaySamples = 48; // Reduced for oscilloscope-style sparse display
 	uint32_t numSamplesToDisplay = std::min(sampleCount, kMaxDisplaySamples);
 
 	// Calculate step size for downsampling if we have more samples than pixels (integer arithmetic)
