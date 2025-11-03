@@ -16,8 +16,10 @@
  */
 
 #include "gui/views/view.h"
+#include "NE10.h"
 #include "definitions_cxx.hpp"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/fft/fft_config_manager.h"
 #include "dsp/reverb/reverb.hpp"
 #include "extern.h"
 #include "gui/colour/colour.h"
@@ -53,6 +55,7 @@
 #include "io/midi/midi_engine.h"
 #include "io/midi/midi_follow.h"
 #include "lib/printf.h"
+#include "memory/general_memory_allocator.h"
 #include "model/action/action_logger.h"
 #include "model/clip/audio_clip.h"
 #include "model/clip/clip_instance.h"
@@ -86,6 +89,9 @@
 #include "storage/file_item.h"
 #include "storage/flash_storage.h"
 #include "storage/storage_manager.h"
+#include "util/functions.h"
+#include <algorithm>
+#include <cmath>
 
 namespace params = deluge::modulation::params;
 namespace encoders = deluge::hid::encoders;
@@ -1497,15 +1503,17 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 						// toggle displaying VU Meter and visualizer on / off
 						if (whichButton == 0) {
 							// Store previous state to determine if we need to refresh OLED when disabling
+							uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 							bool visualizerWasDisplayed =
 							    displayVisualizer
-							    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-							           == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+							    && (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform
+							        || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 							displayVUMeter = !displayVUMeter;
-							// Visualizer follows VU meter toggle only if visualizer feature is enabled in Waveform mode
-							displayVisualizer = displayVUMeter
-							                    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-							                           == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+							// Visualizer follows VU meter toggle for both Waveform and Equalizer modes
+							displayVisualizer =
+							    displayVUMeter
+							    && (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform
+							        || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 							// Refresh OLED if visualizer was previously displayed (need to show normal view when
 							// disabling)
 							if (visualizerWasDisplayed) {
@@ -2043,19 +2051,397 @@ void View::renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	OLED::markChanged();
 }
 
+/// Render visualizer equalizer on OLED display
+void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	using namespace deluge::hid::display;
+	using namespace AudioEngine;
+
+	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
+	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
+	constexpr int32_t kDisplayBottom = OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - 1;
+	constexpr int32_t kMargin = 2;
+	constexpr int32_t kGraphMinX = kMargin;
+	constexpr int32_t kGraphMaxX = kDisplayWidth - kMargin - 1;
+	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
+	constexpr int32_t kGraphBottom = kDisplayBottom - kMargin;
+
+	// FFT configuration - use 256 point FFT (magnitude 8)
+	constexpr int32_t kFFTSize = 256;
+	constexpr int32_t kFFTMagnitude = 8; // 2^8 = 256
+
+	// Number of frequency bars - standard 16-band equalizer
+	constexpr int32_t kNumBars = 16;
+
+	// Read sample count atomically
+	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
+	if (sampleCount < 2) {
+		// Not enough samples yet, similar to waveform visualizer
+		return;
+	}
+
+	// Use the largest power-of-2 FFT size that fits available samples (minimum 32, maximum 256)
+	// This allows the equalizer to render progressively like the waveform visualizer
+	uint32_t actualFFTSize = 32; // Minimum FFT size
+	while (actualFFTSize * 2 <= sampleCount && actualFFTSize < kFFTSize) {
+		actualFFTSize *= 2;
+	}
+	uint32_t actualFFTMagnitude = 5; // 2^5 = 32
+	while ((1u << actualFFTMagnitude) < actualFFTSize) {
+		actualFFTMagnitude++;
+	}
+
+	// Get FFT config for the determined size
+	ne10_fft_r2c_cfg_int32_t fftCFG = FFTConfigManager::getConfig(actualFFTMagnitude);
+	if (!fftCFG) {
+		// FFT config not available
+		OLED::markChanged();
+		return;
+	}
+
+	// Allocate memory for FFT input and output
+	int32_t fftInputSize = actualFFTSize * sizeof(int32_t);
+	int32_t fftOutputSize = ((actualFFTSize >> 1) + 1) * sizeof(ne10_fft_cpx_int32_t);
+	int32_t* fftInput = (int32_t*)GeneralMemoryAllocator::get().allocMaxSpeed(fftInputSize + fftOutputSize);
+	if (!fftInput) {
+		// Memory allocation failed
+		OLED::markChanged();
+		return;
+	}
+
+	ne10_fft_cpx_int32_t* fftOutput = (ne10_fft_cpx_int32_t*)((uint32_t)fftInput + fftInputSize);
+
+	// Read most recent samples from buffer for FFT
+	uint32_t readStartPos;
+	if (sampleCount >= kVisualizerBufferSize) {
+		readStartPos = visualizerWritePos.load(std::memory_order_acquire);
+	}
+	else {
+		readStartPos = 0;
+	}
+
+	// Fill FFT input buffer with most recent samples (read backwards from write position)
+	for (uint32_t i = 0; i < actualFFTSize; i++) {
+		// Read backwards to get most recent samples
+		int32_t readIndex = (readStartPos - (actualFFTSize - 1 - i) + kVisualizerBufferSize) % kVisualizerBufferSize;
+		fftInput[i] = visualizerSampleBuffer[readIndex];
+	}
+
+	// Perform FFT
+	ne10_fft_r2c_1d_int32_neon(fftOutput, (ne10_int32_t*)fftInput, fftCFG, false);
+
+	// Clear the visualizer area
+	canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX, kGraphBottom + 1);
+
+	// Test line at bottom row for verification
+	canvas.drawHorizontalLine(kDisplayBottom, kGraphMinX, kGraphMaxX);
+
+	// Calculate frequency bands and render bars
+	// Standard 16-band equalizer frequency centers (in Hz)
+	// These are the standard ISO frequencies for 16-band EQ
+	// Standard 16-band equalizer frequencies (ISO standard)
+	// Array order: barIndex 0 = low freq (left), barIndex 15 = high freq (right)
+	// Frequency bands (ISO standard 16-band EQ):
+	// 1: 20 Hz (Sub-bass), 2: 31 Hz, 3: 50 Hz, 4: 80 Hz, 5: 125 Hz, 6: 200 Hz, 7: 315 Hz, 8: 500 Hz,
+	// 9: 800 Hz, 10: 1.25 kHz, 11: 2 kHz, 12: 3.15 kHz, 13: 5 kHz, 14: 8 kHz, 15: 12.5 kHz, 16: 16 kHz
+	constexpr float kStandardFreqBands[16] = {20.0f,  31.0f,   50.0f,   80.0f,   125.0f,  200.0f,  315.0f,   500.0f,
+	                                          800.0f, 1250.0f, 2000.0f, 3150.0f, 5000.0f, 8000.0f, 12500.0f, 16000.0f};
+	constexpr float kSampleRate = 44100.0f;
+
+	// Static storage for peak tracking (persists across frames)
+	static int32_t peakHeights[kNumBars] = {0};
+	static int32_t peakDecay[kNumBars] = {0};
+	constexpr int32_t kPeakDecayRate = 1; // Decay increment per frame
+
+	// DEBUG MODE: Only enable the first two bars (lowest frequencies) to verify mapping
+	constexpr bool DEBUG_TWO_BARS_ONLY = false;
+	constexpr int32_t kDebugMaxBars = DEBUG_TWO_BARS_ONLY ? 2 : kNumBars;
+
+	float barWidth = static_cast<float>(kGraphMaxX - kGraphMinX + 1) / kNumBars;
+
+	// First pass: collect magnitudes for all bars
+	// No dynamic scaling - use fixed scale for consistent display
+	int32_t barMagnitudes[kNumBars] = {0};
+
+	// Calculate non-overlapping frequency bands based on ISO standard frequencies
+	// Each bar represents a distinct frequency range without overlap
+	// Band boundaries are calculated between adjacent ISO center frequencies
+	constexpr float minFreq = 20.0f;    // 20 Hz
+	constexpr float maxFreq = 20000.0f; // 20 kHz
+
+	for (int32_t barIndex = 0; barIndex < kDebugMaxBars; barIndex++) {
+		// Calculate band boundaries: boundaries are midpoints between adjacent center frequencies
+		// This ensures non-overlapping bands while still centering around ISO frequencies
+		float f1, f2;
+
+		if (barIndex == 0) {
+			// First band: from minFreq to midpoint between first and second ISO frequency
+			f1 = minFreq;
+			float centerFreq1 = kStandardFreqBands[0];
+			float centerFreq2 = kStandardFreqBands[1];
+			// Geometric mean gives better distribution for logarithmic spacing
+			f2 = std::sqrt(centerFreq1 * centerFreq2);
+		}
+		else if (barIndex == kNumBars - 1) {
+			// Last band: from midpoint between second-to-last and last ISO frequency to maxFreq
+			float centerFreq1 = kStandardFreqBands[kNumBars - 2];
+			float centerFreq2 = kStandardFreqBands[kNumBars - 1];
+			f1 = std::sqrt(centerFreq1 * centerFreq2);
+			f2 = maxFreq;
+		}
+		else {
+			// Middle bands: boundaries are geometric means between adjacent ISO frequencies
+			float centerFreq1 = kStandardFreqBands[barIndex - 1];
+			float centerFreq2 = kStandardFreqBands[barIndex];
+			float centerFreq3 = kStandardFreqBands[barIndex + 1];
+			f1 = std::sqrt(centerFreq1 * centerFreq2);
+			f2 = std::sqrt(centerFreq2 * centerFreq3);
+		}
+
+		// Convert frequencies to FFT bin indices
+		// FFT bin frequency = (bin_index * sample_rate) / fft_size
+		// So: bin_index = (frequency * fft_size) / sample_rate
+		int32_t startIdx = static_cast<int32_t>((f1 * actualFFTSize) / kSampleRate);
+		int32_t endIdx = static_cast<int32_t>((f2 * actualFFTSize) / kSampleRate);
+
+		// Calculate where the next bar starts to ensure no overlap
+		// This ensures each bar uses completely separate bins
+		if (barIndex < kNumBars - 1) {
+			float nextBar_f1, nextBar_f2;
+			// Calculate the frequency boundaries for the next bar
+			if (barIndex + 1 == 0) {
+				// This case shouldn't happen (barIndex + 1 is always >= 1)
+				nextBar_f1 = minFreq;
+			}
+			else if (barIndex + 1 == kNumBars - 1) {
+				// Next bar is the last bar
+				float centerFreq1 = kStandardFreqBands[kNumBars - 2];
+				float centerFreq2 = kStandardFreqBands[kNumBars - 1];
+				nextBar_f1 = std::sqrt(centerFreq1 * centerFreq2);
+			}
+			else {
+				// Next bar is a middle bar
+				float centerFreq1 = kStandardFreqBands[barIndex];
+				float centerFreq2 = kStandardFreqBands[barIndex + 1];
+				float centerFreq3 = (barIndex + 2 < kNumBars) ? kStandardFreqBands[barIndex + 2] : maxFreq;
+				nextBar_f1 = std::sqrt(centerFreq1 * centerFreq2);
+			}
+			int32_t nextBarStart = static_cast<int32_t>((nextBar_f1 * actualFFTSize) / kSampleRate);
+			// CRITICAL: Ensure this bar ends BEFORE next bar starts (exclusive boundary)
+			// This prevents any bin from being read by multiple bars
+			if (endIdx >= nextBarStart) {
+				endIdx = nextBarStart - 1;
+				// If that makes endIdx < startIdx, give it at least one bin
+				if (endIdx < startIdx) {
+					endIdx = startIdx;
+				}
+			}
+		}
+
+		// Skip bin 0 (DC component) - start from bin 1 for audio
+		if (startIdx < 1) {
+			startIdx = 1;
+		}
+		if (endIdx < 1) {
+			endIdx = 1;
+		}
+		// Clamp to valid range (matching other equalizer implementations)
+		// FFT output has (N/2 + 1) bins, valid bins are 0 to N/2
+		// Use N/2 - 1 as max to match other implementations (excludes Nyquist bin)
+		int32_t maxBin = (actualFFTSize >> 1) - 1;
+		if (startIdx > maxBin) {
+			startIdx = maxBin;
+		}
+		if (endIdx > maxBin) {
+			endIdx = maxBin;
+		}
+
+		// CRITICAL: Ensure at least one bin per bar, and ensure bars don't overlap
+		if (endIdx < startIdx) {
+			// If no bins, try to give it one bin if possible
+			if (barIndex == 0) {
+				startIdx = 1;
+				endIdx = 1;
+			}
+			else {
+				// For other bars, use the bin right after previous bar ended
+				// Calculate previous bar's end
+				float prevBar_f2;
+				if (barIndex - 1 == 0) {
+					float centerFreq1 = kStandardFreqBands[0];
+					float centerFreq2 = kStandardFreqBands[1];
+					prevBar_f2 = std::sqrt(centerFreq1 * centerFreq2);
+				}
+				else if (barIndex - 1 == kNumBars - 1) {
+					prevBar_f2 = maxFreq;
+				}
+				else {
+					float centerFreq1 = kStandardFreqBands[barIndex - 1];
+					float centerFreq2 = kStandardFreqBands[barIndex];
+					float centerFreq3 = (barIndex + 1 < kNumBars) ? kStandardFreqBands[barIndex + 1] : maxFreq;
+					prevBar_f2 = std::sqrt(centerFreq1 * centerFreq2);
+				}
+				int32_t prevBarEnd = std::min(static_cast<int32_t>((prevBar_f2 * actualFFTSize) / kSampleRate), maxBin);
+				startIdx = prevBarEnd + 1;
+				endIdx = startIdx;
+				if (startIdx > maxBin) {
+					startIdx = maxBin;
+					endIdx = maxBin;
+				}
+			}
+		}
+
+		// Calculate RMS (root mean square) magnitude in this frequency range
+		// RMS is better than average for representing energy in a frequency band
+		// CRITICAL: Only read bins in the exclusive range [startIdx, endIdx] for this bar
+		int64_t sumSquared = 0; // Use 64-bit to prevent overflow
+		int32_t binCount = 0;
+		// Explicitly clamp to prevent reading beyond intended range
+		int32_t actualEndIdx = std::min(endIdx, static_cast<int32_t>(actualFFTSize >> 1));
+		for (int32_t j = startIdx; j <= actualEndIdx; j++) {
+			int32_t magnitude = fastPythag(fftOutput[j].r, fftOutput[j].i);
+			// Square each magnitude and sum (for RMS calculation)
+			int64_t magSquared = static_cast<int64_t>(magnitude) * magnitude;
+			sumSquared += magSquared;
+			binCount++;
+		}
+
+		if (binCount == 0) {
+			continue;
+		}
+
+		// Calculate RMS: sqrt(sum of squares / count)
+		// Use approximation: sqrt(x) ≈ x for small values, or use integer sqrt
+		int64_t meanSquared = sumSquared / binCount;
+		int32_t rmsMagnitude = static_cast<int32_t>(std::sqrt(static_cast<float>(meanSquared)));
+
+		// Alternative: use peak instead of RMS for better visibility of transients
+		// Find peak magnitude in this band (using same clamped range)
+		int32_t peakMagnitude = 0;
+		for (int32_t j = startIdx; j <= actualEndIdx; j++) {
+			int32_t magnitude = fastPythag(fftOutput[j].r, fftOutput[j].i);
+			if (magnitude > peakMagnitude) {
+				peakMagnitude = magnitude;
+			}
+		}
+
+		// Use RMS for smoother response, but clip very high peaks
+		int32_t avgMagnitude = rmsMagnitude;
+		if (peakMagnitude > rmsMagnitude * 4) {
+			// If peak is much higher than RMS, use a weighted average
+			avgMagnitude = (rmsMagnitude * 3 + peakMagnitude) / 4;
+		}
+
+		// Apply threshold to reduce noise/leakage - only count significant magnitudes
+		constexpr int32_t kMagnitudeThreshold = 100; // Minimum magnitude to register
+		if (avgMagnitude < kMagnitudeThreshold) {
+			avgMagnitude = 0; // Filter out noise
+		}
+
+		barMagnitudes[barIndex] = avgMagnitude;
+	}
+
+	// Use fixed scale factor for equalizer (no dynamic scaling)
+	// Equalizers should show absolute frequency response, not relative to current mix
+	// Based on reference visualizer: divide magnitudes by scaling factors (50/35/25) then normalize
+	// For fixed scaling, use a single divisor that works for typical magnitudes
+	// Typical FFT magnitudes are in thousands to tens of thousands
+	constexpr float kMagnitudeDivisor = 200.0f; // Divide magnitude by this (larger = smaller bars)
+
+	// Second pass: render bars using the calculated scale
+	// barIndex 0 = low freq (20Hz), barIndex kNumBars-1 = high freq (16kHz)
+	// renderIndex 0 = left position, renderIndex kNumBars-1 = right position
+	// Now that we fixed the frequency assignment, barIndex matches renderIndex directly
+	// DEBUG: Only render the bars we processed
+	for (int32_t renderIndex = 0; renderIndex < kDebugMaxBars; renderIndex++) {
+		// Direct mapping: renderIndex 0 (left) -> barIndex 0 (low freq, 20Hz)
+		// renderIndex 15 (right) -> barIndex 15 (high freq, 16kHz)
+		int32_t barIndex = renderIndex;
+
+		// Calculate bar height using fixed scaling
+		// Divide magnitude by divisor, then scale to graph height
+		float normalizedMagnitude = static_cast<float>(barMagnitudes[barIndex]) / kMagnitudeDivisor;
+		float normalizedHeight = normalizedMagnitude * static_cast<float>(kGraphHeight);
+		// Clamp to max height (1.0 in normalized space = full graph height)
+		normalizedHeight = std::min(normalizedHeight, static_cast<float>(kGraphHeight));
+		int32_t height = static_cast<int32_t>(normalizedHeight);
+
+		// Clamp to valid range
+		if (height > kGraphHeight) {
+			height = kGraphHeight;
+		}
+		if (height < 0) {
+			height = 0;
+		}
+
+		// Update peak tracking (matching reference implementation decay algorithm)
+		int32_t targetPeakHeight = height;
+		if (targetPeakHeight > peakHeights[barIndex]) {
+			peakHeights[barIndex] = targetPeakHeight;
+			peakDecay[barIndex] = 0;
+		}
+		else {
+			peakDecay[barIndex] += kPeakDecayRate;
+			// Quadratic decay like reference: peakDecay[i] * peakDecay[i]
+			int32_t decayAmount = (peakDecay[barIndex] * peakDecay[barIndex]) >> 4; // Scale down to prevent overflow
+			if (decayAmount > peakHeights[barIndex]) {
+				peakHeights[barIndex] = targetPeakHeight;
+			}
+			else {
+				int32_t newPeakHeight = peakHeights[barIndex] - decayAmount;
+				peakHeights[barIndex] = (newPeakHeight > targetPeakHeight) ? newPeakHeight : targetPeakHeight;
+			}
+		}
+
+		// Calculate bar position - renderIndex 0 is left (low freq), renderIndex kNumBars-1 is right (high freq)
+		int32_t barX = kGraphMinX + static_cast<int32_t>(renderIndex * barWidth);
+		int32_t barWidthPixels = static_cast<int32_t>(barWidth * 0.8f); // 80% width, 20% gap
+		if (barWidthPixels < 1) {
+			barWidthPixels = 1;
+		}
+		int32_t barRight = std::min(barX + barWidthPixels - 1, kGraphMaxX);
+
+		// Draw main bar from bottom
+		if (height > 0) {
+			int32_t barTop = kGraphBottom - height;
+			// Draw filled bar using vertical lines
+			for (int32_t x = barX; x <= barRight; x++) {
+				canvas.drawVerticalLine(x, barTop, kGraphBottom);
+			}
+		}
+
+		// Draw peak line if visible
+		if (peakHeights[barIndex] > 0 && peakHeights[barIndex] > height) {
+			int32_t peakY = kGraphBottom - peakHeights[barIndex];
+			canvas.drawHorizontalLine(peakY, barX, barRight);
+		}
+	}
+
+	// Deallocate FFT buffers
+	delugeDealloc(fftInput);
+
+	// Mark OLED as changed
+	OLED::markChanged();
+}
+
 /// Check if visualizer should be rendered and render it if conditions are met
 bool View::potentiallyRenderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
-	// Check if visualizer feature is enabled in Waveform mode in runtime settings
-	bool visualizerEnabled = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-	                         == RuntimeFeatureStateVisualizer::VisualizerWaveform;
-	// Re-enable visualizer if VU meter is enabled and feature is in Waveform mode (handles case where displayVisualizer
-	// was reset in focusRegained() but VU meter is still active)
+	// Check if visualizer feature is enabled in Waveform or Equalizer mode in runtime settings
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+	// Re-enable visualizer if VU meter is enabled and feature is in Waveform or Equalizer mode (handles case where
+	// displayVisualizer was reset in focusRegained() but VU meter is still active)
 	if (displayVUMeter && visualizerEnabled && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		if (!displayVisualizer) {
 			displayVisualizer = true;
 		}
-		renderVisualizer(canvas);
+		if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform) {
+			renderVisualizer(canvas);
+		}
+		else if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+			renderVisualizerEqualizer(canvas);
+		}
 		return true;
 	}
 	// If visualizer should be displayed but conditions aren't met, disable it
@@ -2072,8 +2458,9 @@ void View::requestVisualizerUpdateIfNeeded() {
 	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
 	constexpr uint32_t kVisualizerFrameSkip = 2;
 	// Cache runtime feature check to avoid redundant calls
-	bool visualizerEnabled = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer)
-	                         == RuntimeFeatureStateVisualizer::VisualizerWaveform;
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 	if (displayVisualizer && visualizerEnabled && displayVUMeter && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
 		visualizerFrameCounter++;

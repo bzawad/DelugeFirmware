@@ -117,6 +117,10 @@ static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n:
 	        .displayName = display->haveOLED() ? "Waveform" : "WAVE",
 	        .value = RuntimeFeatureStateVisualizer::VisualizerWaveform,
 	    },
+	    {
+	        .displayName = display->haveOLED() ? "Equalizer" : "EQL",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerEqualizer,
+	    },
 	};
 }
 
