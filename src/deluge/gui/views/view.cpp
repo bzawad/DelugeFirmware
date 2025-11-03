@@ -1949,8 +1949,6 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 	constexpr int32_t kMargin = 2;
 	constexpr int32_t kGraphMinX = kMargin;
 	constexpr int32_t kGraphMaxX = kDisplayWidth - kMargin - 1;
-	// Use half pixel resolution (kGraphWidth) for sampling, but display across full width for visual clarity
-	constexpr int32_t kGraphWidth = (kGraphMaxX - kGraphMinX + 1) / 2;
 	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
 
 	// Read sample count atomically (single read is safe)
@@ -1960,8 +1958,8 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 		return;
 	}
 
-	// Determine how many samples to display (use half resolution for performance)
-	constexpr uint32_t kMaxDisplaySamples = kGraphWidth;
+	// Determine how many samples to display - use more samples for better responsiveness
+	constexpr uint32_t kMaxDisplaySamples = 128; // Increased for better responsiveness
 	uint32_t numSamplesToDisplay = std::min(sampleCount, kMaxDisplaySamples);
 
 	// Calculate step size for downsampling if we have more samples than pixels (integer arithmetic)
@@ -1979,68 +1977,46 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 		readStartPos = 0;
 	}
 
-	// Find min/max for auto-scaling by scanning ONLY the samples we'll actually display
-	// This is much more efficient than scanning all samples
-	int32_t minVal = INT32_MAX;
-	int32_t maxVal = INT32_MIN;
+	// Fixed reference amplitude for fixed-amplitude display aligned with VU meter
+	// UV meter shows clipping at approxRMSLevel = 16.7 (log(2^24))
+	// We want waveform to align: when UV is in red (clipping), waveform should reach peak
+	// Samples are in Q15 format (range ~-32768 to +32768)
+	// Use a much smaller reference to ensure visibility of typical audio
+	// This matches typical audio levels that should be visible
+	constexpr int32_t kFixedReferenceMagnitude = 125; // Reference for typical audio levels (~-78dBFS), 8x amplitude
+
+	// Check for silence by examining a few representative samples
+	// If all samples are very small, draw baseline
+	constexpr int32_t kSilenceThreshold = 10; // Threshold for detecting silence
 	uint32_t sampleIndex = 0;
 	uint32_t remainderAccumulator = 0;
-	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
-		// Calculate buffer index directly to avoid nested loop
-		uint32_t bufferIndex = (readStartPos + sampleIndex) % kVisualizerBufferSize;
-		int32_t sample = visualizerSampleBuffer[bufferIndex];
-		if (sample < minVal)
-			minVal = sample;
-		if (sample > maxVal)
-			maxVal = sample;
-		// Advance sample index using integer-only math with remainder accumulation
-		sampleIndex += stepSize;
-		remainderAccumulator += remainder;
-		if (remainderAccumulator >= kMaxDisplaySamples) {
-			sampleIndex++;
-			remainderAccumulator -= kMaxDisplaySamples;
+	int32_t sampleMagnitude =
+	    std::abs(visualizerSampleBuffer[(readStartPos + sampleCount / 2) % kVisualizerBufferSize]);
+	if (sampleMagnitude < kSilenceThreshold) {
+		// Check a few more samples to confirm silence
+		bool isSilent = true;
+		for (uint32_t i = 0; i < numSamplesToDisplay; i += 16) {
+			uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
+			int32_t mag = std::abs(visualizerSampleBuffer[bufferIndex]);
+			if (mag >= kSilenceThreshold) {
+				isSilent = false;
+				break;
+			}
 		}
-	}
-
-	// Calculate scale factor with minimum range to prevent explosion when audio is silent
-	// Samples are in Q15 format, so max range is ~65536 (32768 to -32768)
-	// Use minimum range of ~1% of full scale to prevent tiny noise from looking huge
-	constexpr int32_t kMinRange = 655;        // ~1% of Q15 full scale
-	constexpr int32_t kSilenceThreshold = 10; // Threshold for detecting silence (samples near zero)
-	int32_t range = maxVal - minVal;
-	bool isSilence = false;
-
-	if (range < kMinRange) {
-		// Check if this is actual silence (center near zero and very small range)
-		int32_t center = (maxVal + minVal) / 2;
-		if (std::abs(center) < kSilenceThreshold && range < kSilenceThreshold) {
-			// Actual silence - will draw a flat line at center
-			isSilence = true;
-		}
-		else {
-			// Small signal but not silence, center around zero and use minimum range
-			minVal = center - (kMinRange / 2);
-			maxVal = center + (kMinRange / 2);
-			range = kMinRange;
+		if (isSilent) {
+			// Clear the visualizer area
+			canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
+			                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
+			// Draw baseline at center (zero line for waveform)
+			canvas.drawHorizontalLine(kCenterY, kGraphMinX, kGraphMaxX);
+			OLED::markChanged();
+			return;
 		}
 	}
 
 	// Clear the visualizer area before drawing to prevent ghosting from previous frames
-	// maxY is exclusive, so add 1 to include the bottom margin
 	canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
 	                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
-
-	// If silence detected, draw a simple flat line at center and return early
-	if (isSilence) {
-		canvas.drawHorizontalLine(kCenterY, kGraphMinX, kGraphMaxX);
-		OLED::markChanged();
-		return;
-	}
-
-	// Calculate scale factor for normal waveform rendering
-	// Boost amplitude by 20% for better visibility (peaks can be clipped)
-	constexpr float kAmplitudeBoost = 1.2f;
-	float scale = (static_cast<float>(kGraphHeight) / static_cast<float>(range)) * kAmplitudeBoost;
 
 	// Draw waveform - spread samples evenly across full width
 	// Reset drawing state to prevent connecting to previous frame (fixes vertical line at start)
@@ -2061,15 +2037,26 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 		// Get sample value
 		int32_t sample = visualizerSampleBuffer[bufferIndex];
 
-		// Calculate Y position (center at kCenterY, scale relative to min/max)
-		// Convert from Q15 range to normalized position
-		// Use int64_t for intermediate calculation to prevent overflow
-		int64_t sampleDiff = static_cast<int64_t>(sample) - static_cast<int64_t>(minVal);
-		int64_t scaled = static_cast<int64_t>(sampleDiff * scale);
-		int32_t normalizedOffset = static_cast<int32_t>(scaled);
-		int32_t y = kCenterY - (normalizedOffset - (kGraphHeight / 2));
+		// Calculate Y position using fixed amplitude scaling (center at kCenterY)
+		// Scale sample from [-kFixedReferenceMagnitude, +kFixedReferenceMagnitude] to display height
+		// Positive samples go up from center, negative samples go down
+		// Using fixed reference means actual signal levels are displayed, not auto-scaled
+		int32_t scaledHeight = 0;
+		if (sample != 0) {
+			// Scale linearly: height = (sample * (kGraphHeight / 2)) / kFixedReferenceMagnitude
+			// Use 64-bit intermediate to prevent overflow
+			scaledHeight = static_cast<int32_t>((static_cast<int64_t>(sample) * static_cast<int64_t>(kGraphHeight / 2))
+			                                    / kFixedReferenceMagnitude);
+		}
 
-		// Clamp Y to valid range
+		// Convert to pixel Y position (waveform: center at kCenterY, positive samples go up, negative go down)
+		// When sample is 0, y should be at center (kCenterY)
+		// When sample reaches +kFixedReferenceMagnitude, y should be at top (kGraphMinY)
+		// When sample reaches -kFixedReferenceMagnitude, y should be at bottom (kGraphMaxY)
+		// Clamp scaledHeight to prevent overflow
+		scaledHeight = std::clamp(scaledHeight, -(kGraphHeight / 2), (kGraphHeight / 2));
+		int32_t y = kCenterY - scaledHeight;
+		// Clamp to valid display range
 		y = std::clamp(y, static_cast<int32_t>(OLED_MAIN_TOPMOST_PIXEL + kMargin),
 		               static_cast<int32_t>(OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1));
 
