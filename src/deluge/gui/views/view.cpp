@@ -16,10 +16,8 @@
  */
 
 #include "gui/views/view.h"
-#include "NE10.h"
 #include "definitions_cxx.hpp"
 #include "deluge/model/settings/runtime_feature_settings.h"
-#include "dsp/fft/fft_config_manager.h"
 #include "dsp/reverb/reverb.hpp"
 #include "extern.h"
 #include "gui/colour/colour.h"
@@ -89,10 +87,6 @@
 #include "storage/file_item.h"
 #include "storage/flash_storage.h"
 #include "storage/storage_manager.h"
-#include "util/fixedpoint.h"
-#include "util/functions.h"
-#include <cmath>
-#include <numbers>
 
 namespace params = deluge::modulation::params;
 namespace encoders = deluge::hid::encoders;
