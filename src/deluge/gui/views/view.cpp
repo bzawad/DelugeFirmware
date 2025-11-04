@@ -1919,7 +1919,7 @@ ne10_fft_r2c_cfg_int32_t getSpectrumFFTConfig() {
 
 // Static peak tracking arrays for equalizer visualizer
 // Store peak heights in normalized 0-1 range (like reference) for proper decay scaling
-constexpr int32_t kEqualizerNumBars = 8;
+constexpr int32_t kEqualizerNumBars = 16;
 float equalizerPeakHeights[kEqualizerNumBars] = {0.0f};
 float equalizerPeakDecay[kEqualizerNumBars] = {0.0f};
 
@@ -1930,11 +1930,14 @@ constexpr float kEqualizerPeakDecayRate = 0.005f; // Same as PEAK_DECAY_RATE in 
 float spectrumSmoothedValues[kSpectrumFFTOutputSize] = {0.0f};
 float equalizerSmoothedValues[kEqualizerNumBars] = {0.0f};
 
-// 8 frequency band center frequencies (Hz) - standard equalizer bands
-// Band 1: 31 Hz (Sub-bass), 2: 63 Hz (Bass body), 3: 125 Hz (Upper bass), 4: 250 Hz (Low mids),
-// 5: 500 Hz (Midrange), 6: 1 kHz (Presence), 7: 2 kHz (Upper mids), 8: 8 kHz (Treble/air)
-constexpr float kEqualizerFrequencies[kEqualizerNumBars] = {31.0f,  63.0f,   125.0f,  250.0f,
-                                                            500.0f, 1000.0f, 2000.0f, 8000.0f};
+// 16 frequency band center frequencies (Hz) - standard equalizer bands
+// Band 1: 31 Hz (Sub-bass), 2: 50 Hz (Bass thump), 3: 80 Hz (Bass body), 4: 125 Hz (Upper bass),
+// 5: 200 Hz (Low mids), 6: 315 Hz (Warmth), 7: 500 Hz (Midrange), 8: 800 Hz (Mid clarity),
+// 9: 1.25 kHz (Presence), 10: 2 kHz (Presence), 11: 3.15 kHz (Upper mids), 12: 5 kHz (Clarity),
+// 13: 8 kHz (High presence), 14: 12.5 kHz (Brilliance), 15: 16 kHz (Air), 16: 20 kHz (Ultrasonic)
+constexpr float kEqualizerFrequencies[kEqualizerNumBars] = {31.0f,   50.0f,    80.0f,    125.0f,  200.0f,  315.0f,
+                                                            500.0f,  800.0f,   1250.0f,  2000.0f, 3150.0f, 5000.0f,
+                                                            8000.0f, 12500.0f, 16000.0f, 20000.0f};
 
 } // namespace
 
@@ -2317,7 +2320,7 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	OLED::markChanged();
 }
 
-/// Render visualizer equalizer on OLED display using FFT with 16 frequency bands
+/// Render visualizer equalizer on OLED display using FFT with 16 frequency bands (16 bars)
 void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	using namespace deluge::hid::display;
 	using namespace AudioEngine;
@@ -2400,9 +2403,9 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 		if (isSilent) {
 			canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 			// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
-			constexpr int32_t kBarWidth = 10;
+			constexpr int32_t kBarWidth = 5;
 			constexpr int32_t kBarGap = 2;
-			constexpr int32_t kEqualizerMargin = 15;
+			constexpr int32_t kEqualizerMargin = 7;
 			constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
 
 			for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
@@ -2419,18 +2422,19 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	// Clear the visualizer area before drawing
 	canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 
-	// Bar layout: 8 bars with even margins and clean pixel alignment
-	// Bar width: 10 px, Gap: 2 px, Margins: 15 px each side = 124 px total
-	constexpr int32_t kBarWidth = 10;
+	// Bar layout: 16 bars with even margins and clean pixel alignment
+	// Bar width: 5 px, Gap: 2 px, Margins: 7 px each side = 124 px total
+	// Layout: 7px left margin + [5px bar + 2px gap] × 15 + 5px final bar + 7px right margin
+	constexpr int32_t kBarWidth = 5;
 	constexpr int32_t kBarGap = 2;
-	constexpr int32_t kEqualizerMargin = 15;
+	constexpr int32_t kEqualizerMargin = 7;
 	constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
 	constexpr int32_t kEqualizerContentEndX = kGraphMaxX - kEqualizerMargin;
 
 	// Calculate frequency resolution per bin
 	float freqResolution = kSampleRate / static_cast<float>(kSpectrumFFTSize);
 
-	// Render 8 frequency bars
+	// Render 16 frequency bars
 	for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
 		float centerFreq = kEqualizerFrequencies[bar];
 
@@ -2438,9 +2442,9 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 		// Use logarithmic spacing around center frequency (approximately 1/3 octave bands)
 		float lowerFreq, upperFreq;
 		if (bar == 0) {
-			// First band: from 20 Hz to midpoint between 20 and 31 Hz
+			// First band: from 20 Hz to midpoint between band 1 (31 Hz) and band 2 (50 Hz)
 			lowerFreq = 20.0f;
-			upperFreq = (20.0f + 31.0f) / 2.0f;
+			upperFreq = (kEqualizerFrequencies[bar] + kEqualizerFrequencies[bar + 1]) / 2.0f;
 		}
 		else if (bar == kEqualizerNumBars - 1) {
 			// Last band: from midpoint between previous and center to 20kHz
