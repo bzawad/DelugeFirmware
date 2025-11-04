@@ -104,12 +104,12 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	if (view.potentiallyRenderVisualizer(canvas)) {
+	else if (view.potentiallyRenderVisualizer(canvas)) {
 		// Visualizer was rendered, skip normal rendering
 		return;
 	}
 
-	if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
+	else if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
 		Output* output = outputsOnScreen[yPressedEffective];
 		view.displayOutputName(output);
 	}
