@@ -1882,9 +1882,46 @@ constexpr int32_t kSpectrumFFTSize = 256;
 constexpr int32_t kSpectrumFFTMagnitude = 8;                            // 2^8 = 256
 constexpr int32_t kSpectrumFFTOutputSize = (kSpectrumFFTSize >> 1) + 1; // 129 bins
 
+// Visualizer calibration constants
+// Reference magnitudes for amplitude scaling
+constexpr int32_t kWaveformReferenceMagnitude = 125; // Q15 format, ~-78dBFS typical audio
+constexpr int32_t kFFTReferenceMagnitude = 50000000; // Q31 format for FFT output
+
+// Silence detection thresholds
+constexpr int32_t kWaveformSilenceThreshold = 10; // Q15 format
+constexpr int32_t kFFTSilenceThreshold = 100;     // FFT magnitude threshold
+
+// Visual compression parameters
+constexpr float kCompressionExponent = 0.45f;        // Soft knee compression
+constexpr float kFrequencyBoostExponent = 0.075f;    // High-frequency boost
+constexpr float kFrequencyNormalizationHz = 1000.0f; // Frequency normalization base
+
+// Smoothing filter coefficients (first-order IIR: smoothed = alpha*old + (1-alpha)*new)
+constexpr float kSmoothingAlpha = 0.8f; // Smoothing factor for old value
+constexpr float kSmoothingBeta = 0.2f;  // Weight for new value
+
+// Peak decay parameters
+constexpr float kPeakDecayRate = 0.005f; // Decay rate per frame
+
 // Static FFT buffers
+// Memory usage: ~5.5KB total
+// - visualizerSampleBuffer[256] = 1KB (used by all modes, in audio_engine.cpp)
+// - spectrumFFTInput[256] = 1KB (shared by spectrum/equalizer modes)
+// - spectrumFFTOutput[129] = ~1KB (shared by spectrum/equalizer modes)
+// - spectrumHanningWindow[256] = 1KB (shared by spectrum/equalizer modes)
+// - spectrumSmoothedValues[128] = 512B (only used by spectrum mode)
+// - equalizerSmoothedValues[16] = 64B (only used by equalizer mode)
+// - equalizerPeakHeights[16] + equalizerPeakDecay[16] = ~128B (only used by equalizer mode)
 int32_t spectrumFFTInput[kSpectrumFFTSize];
 ne10_fft_cpx_int32_t spectrumFFTOutput[kSpectrumFFTOutputSize];
+
+// FFT result caching to avoid recomputation on every frame
+struct CachedFFTResult {
+	uint32_t lastWritePos; // Last buffer write position when FFT was computed
+	ne10_fft_cpx_int32_t cachedOutput[kSpectrumFFTOutputSize];
+	bool isValid;
+};
+static CachedFFTResult cachedFFT = {0, {}, false};
 
 // Precomputed Hanning window in Q31 format
 int32_t spectrumHanningWindow[kSpectrumFFTSize];
@@ -1923,14 +1960,103 @@ bool isFFTSilent(const ne10_fft_cpx_int32_t* fftOutput, int32_t threshold) {
 	return false;
 }
 
+// Helper function to get read start position from circular buffer
+uint32_t getVisualizerReadStartPos(uint32_t sampleCount) {
+	using namespace AudioEngine;
+	if (sampleCount >= kVisualizerBufferSize) {
+		// Buffer is full, oldest sample is at writePos (next to be overwritten)
+		return visualizerWritePos.load(std::memory_order_acquire);
+	}
+	else {
+		// Buffer not full, start from beginning
+		return 0;
+	}
+}
+
+// FFT computation result structure
+struct FFTResult {
+	ne10_fft_cpx_int32_t* output;
+	bool isValid;
+	bool isSilent;
+};
+
+// Compute FFT for visualizer with caching optimization
+// Returns FFT output and validity flags
+FFTResult computeVisualizerFFT() {
+	using namespace AudioEngine;
+	FFTResult result = {nullptr, false, false};
+
+	// Read sample count atomically (single read is safe)
+	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
+	if (sampleCount < kSpectrumFFTSize) {
+		// Not enough samples yet
+		return result;
+	}
+
+	// Get FFT config (lazy initialization)
+	ne10_fft_r2c_cfg_int32_t fftConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
+	if (fftConfig == nullptr) {
+		// FFT config not available
+		return result;
+	}
+
+	// Check if we can use cached FFT result
+	uint32_t currentWritePos = visualizerWritePos.load(std::memory_order_acquire);
+	if (cachedFFT.isValid) {
+		// Calculate buffer position difference (handle wrap-around)
+		uint32_t posDiff = (currentWritePos >= cachedFFT.lastWritePos)
+		                       ? (currentWritePos - cachedFFT.lastWritePos)
+		                       : (kVisualizerBufferSize - cachedFFT.lastWritePos + currentWritePos);
+
+		// Only recompute if buffer has advanced significantly (>= 64 samples = 1/4 FFT size)
+		constexpr uint32_t kFFTCacheThreshold = kSpectrumFFTSize / 4;
+		if (posDiff < kFFTCacheThreshold) {
+			// Use cached result
+			result.output = cachedFFT.cachedOutput;
+			result.isValid = true;
+			result.isSilent = isFFTSilent(cachedFFT.cachedOutput, kFFTSilenceThreshold);
+			return result;
+		}
+	}
+
+	// Calculate read start position from circular buffer
+	uint32_t readStartPos = getVisualizerReadStartPos(sampleCount);
+
+	// Copy samples and apply Hanning window
+	// Samples are in Q15 format, window is in Q31 format
+	// Result: (Q15 * Q31) >> 16 = Q15
+	initSpectrumHanningWindow();
+	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
+		uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
+		int32_t sample = visualizerSampleBuffer[bufferIndex]; // Q15
+
+		// Apply Hanning window: multiply Q15 sample by Q31 window, shift right by 16
+		// Use 64-bit intermediate to prevent overflow
+		int64_t windowedSample = (static_cast<int64_t>(sample) * static_cast<int64_t>(spectrumHanningWindow[i])) >> 16;
+		spectrumFFTInput[i] = static_cast<int32_t>(windowedSample);
+	}
+
+	// Perform FFT (real-to-complex)
+	ne10_fft_r2c_1d_int32_neon(spectrumFFTOutput, spectrumFFTInput, fftConfig, false);
+
+	// Update cache
+	cachedFFT.lastWritePos = currentWritePos;
+	for (int32_t i = 0; i < kSpectrumFFTOutputSize; i++) {
+		cachedFFT.cachedOutput[i] = spectrumFFTOutput[i];
+	}
+	cachedFFT.isValid = true;
+
+	result.output = spectrumFFTOutput;
+	result.isValid = true;
+	result.isSilent = isFFTSilent(spectrumFFTOutput, kFFTSilenceThreshold);
+	return result;
+}
+
 // Static peak tracking arrays for equalizer visualizer
 // Store peak heights in normalized 0-1 range for proper decay scaling
 constexpr int32_t kEqualizerNumBars = 16;
 float equalizerPeakHeights[kEqualizerNumBars] = {0.0f};
 float equalizerPeakDecay[kEqualizerNumBars] = {0.0f};
-
-// Peak decay rate constant (decay rate per frame)
-constexpr float kEqualizerPeakDecayRate = 0.005f;
 
 // Static smoothing arrays for visual compression (optional time-averaging)
 // Use per-pixel smoothing for spectrum to avoid conflicts when multiple pixels map to same bin
@@ -2003,25 +2129,17 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 	uint32_t remainder = (sampleCount > kMaxDisplaySamples) ? (sampleCount % kMaxDisplaySamples) : 0;
 
 	// Start reading from write position and work backwards to get most recent samples
-	uint32_t readStartPos;
-	if (sampleCount >= kVisualizerBufferSize) {
-		// Buffer is full, oldest sample is at writePos (next to be overwritten)
-		readStartPos = visualizerWritePos.load(std::memory_order_acquire);
-	}
-	else {
-		// Buffer not full, start from beginning
-		readStartPos = 0;
-	}
+	uint32_t readStartPos = getVisualizerReadStartPos(sampleCount);
 
 	// Fixed reference amplitude for fixed-amplitude display aligned with VU meter
 	// When VU meter shows clipping, waveform should reach peak
 	// Samples are in Q15 format (range ~-32768 to +32768)
-	constexpr int32_t kFixedReferenceMagnitude =
-	    125; // Reference for typical audio levels (~-78dBFS), calibrated for waveform visibility
+	// Value determined empirically to align waveform peaks with VU meter clipping indication
+	constexpr int32_t kFixedReferenceMagnitude = kWaveformReferenceMagnitude;
 
 	// Check for silence by examining a few representative samples
 	// If all samples are very small, draw baseline
-	constexpr int32_t kSilenceThreshold = 10; // Threshold for detecting silence
+	constexpr int32_t kSilenceThreshold = kWaveformSilenceThreshold;
 	int32_t sampleMagnitude =
 	    std::abs(visualizerSampleBuffer[(readStartPos + sampleCount / 2) % kVisualizerBufferSize]);
 	if (sampleMagnitude < kSilenceThreshold) {
@@ -2143,59 +2261,22 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	constexpr int32_t kGraphMinY = OLED_MAIN_TOPMOST_PIXEL + kMargin;
 	constexpr int32_t kGraphMaxY = OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1;
 
-	// Initialize Hanning window (one-time initialization)
-	initSpectrumHanningWindow();
-
-	// Read sample count atomically (single read is safe)
-	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
-	if (sampleCount < kSpectrumFFTSize) {
-		// Not enough samples yet, draw empty
+	// Compute FFT using shared helper function (with caching optimization)
+	FFTResult fftResult = computeVisualizerFFT();
+	if (!fftResult.isValid) {
+		// Not enough samples or FFT config not available, draw empty
 		return;
 	}
-
-	// Get FFT config (lazy initialization)
-	ne10_fft_r2c_cfg_int32_t fftConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
-	if (fftConfig == nullptr) {
-		// FFT config not available, draw empty
-		return;
-	}
-
-	// Read most recent 256 samples from circular buffer
-	uint32_t readStartPos;
-	if (sampleCount >= kVisualizerBufferSize) {
-		// Buffer is full, oldest sample is at writePos (next to be overwritten)
-		readStartPos = visualizerWritePos.load(std::memory_order_acquire);
-	}
-	else {
-		// Buffer not full, start from beginning
-		readStartPos = 0;
-	}
-
-	// Copy samples and apply Hanning window
-	// Samples are in Q15 format, window is in Q31 format
-	// Result: (Q15 * Q31) >> 16 = Q15
-	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
-		uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
-		int32_t sample = visualizerSampleBuffer[bufferIndex]; // Q15
-
-		// Apply Hanning window: multiply Q15 sample by Q31 window, shift right by 16
-		// Use 64-bit intermediate to prevent overflow
-		int64_t windowedSample = (static_cast<int64_t>(sample) * static_cast<int64_t>(spectrumHanningWindow[i])) >> 16;
-		spectrumFFTInput[i] = static_cast<int32_t>(windowedSample);
-	}
-
-	// Perform FFT (real-to-complex)
-	ne10_fft_r2c_1d_int32_neon(spectrumFFTOutput, spectrumFFTInput, fftConfig, false);
 
 	// Fixed reference magnitude for fixed-amplitude display aligned with VU meter
 	// When VU meter shows clipping, spectrum should be at peak
-	// FFT input is Q15, output is Q31 complex, so this value accounts for the magnitude scaling
-	constexpr int32_t kFixedReferenceMagnitude = 50000000; // Calibrated for FFT magnitude scaling (Q31 output)
+	// Value determined empirically to align spectrum peaks with VU meter clipping indication.
+	// FFT output is Q31 complex format, so magnitude is sqrt(r^2 + i^2) in Q31 range.
+	constexpr int32_t kFixedReferenceMagnitude = kFFTReferenceMagnitude;
 
 	// Check for silence by examining a few representative bins
 	// If all bins are very small, draw baseline
-	constexpr int32_t kSilenceThreshold = 100; // Threshold for detecting silence
-	if (isFFTSilent(spectrumFFTOutput, kSilenceThreshold)) {
+	if (fftResult.isSilent) {
 		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 		// Draw baseline at bottom (zero line for spectrum)
 		canvas.drawHorizontalLine(kGraphMaxY, kGraphMinX, kGraphMaxX);
@@ -2253,8 +2334,8 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 		binIndexHigh = std::max(static_cast<int32_t>(0), std::min(binIndexHigh, kNumBins - 1));
 
 		// Get magnitudes for both bins
-		int32_t magnitudeLow = fastPythag(spectrumFFTOutput[binIndexLow].r, spectrumFFTOutput[binIndexLow].i);
-		int32_t magnitudeHigh = fastPythag(spectrumFFTOutput[binIndexHigh].r, spectrumFFTOutput[binIndexHigh].i);
+		int32_t magnitudeLow = fastPythag(fftResult.output[binIndexLow].r, fftResult.output[binIndexLow].i);
+		int32_t magnitudeHigh = fastPythag(fftResult.output[binIndexHigh].r, fftResult.output[binIndexHigh].i);
 
 		// Interpolate between the two bins
 		// Use 64-bit intermediate to prevent overflow during calculation
@@ -2266,16 +2347,21 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 		float amplitude = magnitudeFloat / static_cast<float>(kFixedReferenceMagnitude);
 		amplitude = std::clamp(amplitude, 0.0f, 1.0f);
 
-		// Apply compression formula: (amplitude^0.45) * ((frequency/1000)^0.075)
-		// The 0.45 power compresses dynamics (soft knee effect)
-		// The (frequency/1000)^0.075 term provides subtle high-frequency boost while reducing low-end dominance
-		float display_value = std::pow(amplitude, 0.45f) * std::pow(frequency / 1000.0f, 0.075f);
+		// Apply compression formula: (amplitude^kCompressionExponent) *
+		// ((frequency/kFrequencyNormalizationHz)^kFrequencyBoostExponent) The compression exponent compresses dynamics
+		// (soft knee effect) The frequency boost term provides subtle high-frequency boost while reducing low-end
+		// dominance
+		float display_value = std::pow(amplitude, kCompressionExponent)
+		                      * std::pow(frequency / kFrequencyNormalizationHz, kFrequencyBoostExponent);
 
-		// Apply smoothing filter for stability (smoothed = smoothed*0.8 + display_value*0.2)
+		// Apply smoothing filter for stability (first-order IIR: smoothed = alpha*old + beta*new)
 		// Use per-pixel smoothing instead of per-bin to avoid conflicts when multiple pixels map to same bin
 		// This prevents stepping artifacts, especially at low frequencies after compression
-		if (pixel < kMaxSpectrumPixels) {
-			spectrumSmoothedValues[pixel] = spectrumSmoothedValues[pixel] * 0.8f + display_value * 0.2f;
+		// Only use smoothing buffer when in spectrum mode (conditional memory usage)
+		uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+		if (pixel < kMaxSpectrumPixels && visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
+			spectrumSmoothedValues[pixel] =
+			    spectrumSmoothedValues[pixel] * kSmoothingAlpha + display_value * kSmoothingBeta;
 			display_value = spectrumSmoothedValues[pixel];
 		}
 
@@ -2314,6 +2400,18 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 }
 
 /// Render visualizer equalizer on OLED display using FFT with 16 frequency bands (16 bars)
+///
+/// Algorithm:
+/// 1. Compute FFT on most recent 256 audio samples (shared with spectrum visualizer)
+/// 2. For each of 16 frequency bands, map to FFT bins using weighted interpolation:
+///    - Each band covers a frequency range (lowerFreq to upperFreq)
+///    - Bins overlapping the range contribute proportionally to their overlap
+///    - Weighted average magnitude is calculated across all overlapping bins
+/// 3. Apply visual compression: (amplitude^0.45) * ((frequency/1000)^0.075)
+///    - Compression exponent provides soft-knee dynamics compression
+///    - Frequency term provides subtle high-frequency boost
+/// 4. Apply smoothing filter (first-order IIR) to stabilize display
+/// 5. Track peak heights with squared decay for visual feedback
 void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	using namespace deluge::hid::display;
 	using namespace AudioEngine;
@@ -2330,57 +2428,21 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	// Sample rate is 44.1kHz (as per existing code comments)
 	constexpr float kSampleRate = 44100.0f;
 
-	// Initialize Hanning window (one-time initialization)
-	initSpectrumHanningWindow();
-
-	// Read sample count atomically (single read is safe)
-	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
-	if (sampleCount < kSpectrumFFTSize) {
-		// Not enough samples yet, draw empty
+	// Compute FFT using shared helper function (with caching optimization)
+	FFTResult fftResult = computeVisualizerFFT();
+	if (!fftResult.isValid) {
+		// Not enough samples or FFT config not available, draw empty
 		return;
 	}
-
-	// Get FFT config (lazy initialization)
-	ne10_fft_r2c_cfg_int32_t fftConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
-	if (fftConfig == nullptr) {
-		// FFT config not available, draw empty
-		return;
-	}
-
-	// Read most recent 256 samples from circular buffer
-	uint32_t readStartPos;
-	if (sampleCount >= kVisualizerBufferSize) {
-		// Buffer is full, oldest sample is at writePos (next to be overwritten)
-		readStartPos = visualizerWritePos.load(std::memory_order_acquire);
-	}
-	else {
-		// Buffer not full, start from beginning
-		readStartPos = 0;
-	}
-
-	// Copy samples and apply Hanning window
-	// Samples are in Q15 format, window is in Q31 format
-	// Result: (Q15 * Q31) >> 16 = Q15
-	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
-		uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
-		int32_t sample = visualizerSampleBuffer[bufferIndex]; // Q15
-
-		// Apply Hanning window: multiply Q15 sample by Q31 window, shift right by 16
-		// Use 64-bit intermediate to prevent overflow
-		int64_t windowedSample = (static_cast<int64_t>(sample) * static_cast<int64_t>(spectrumHanningWindow[i])) >> 16;
-		spectrumFFTInput[i] = static_cast<int32_t>(windowedSample);
-	}
-
-	// Perform FFT (real-to-complex)
-	ne10_fft_r2c_1d_int32_neon(spectrumFFTOutput, spectrumFFTInput, fftConfig, false);
 
 	// Fixed reference magnitude for fixed-amplitude display aligned with VU meter
-	constexpr int32_t kFixedReferenceMagnitude = 50000000; // Calibrated for FFT magnitude scaling (Q31 output)
+	// Value determined empirically to align spectrum peaks with VU meter clipping indication.
+	// FFT output is Q31 complex format, so magnitude is sqrt(r^2 + i^2) in Q31 range.
+	constexpr int32_t kFixedReferenceMagnitude = kFFTReferenceMagnitude;
 
 	// Check for silence by examining a few representative bins
 	// If all bins are very small, draw baseline
-	constexpr int32_t kSilenceThreshold = 100; // Threshold for detecting silence
-	if (isFFTSilent(spectrumFFTOutput, kSilenceThreshold)) {
+	if (fftResult.isSilent) {
 		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 		// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
 		constexpr int32_t kBarWidth = 5;
@@ -2450,6 +2512,12 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 
 		// Use weighted interpolation to smooth transitions between bins
 		// Each bin's contribution is weighted by how much of the frequency range it covers
+		// This prevents stepping artifacts when frequency bands don't align exactly with FFT bins
+		// Algorithm:
+		// 1. Calculate overlap between frequency band range and each FFT bin
+		// 2. Weight each bin's magnitude by its overlap percentage
+		// 3. Sum weighted magnitudes and divide by total weight for average
+		// This provides smooth frequency response without artifacts from bin boundaries
 		float weightedSum = 0.0f;
 		float totalWeight = 0.0f;
 
@@ -2467,7 +2535,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 			float overlapEnd = std::min(upperFreq, binEndFreq);
 			if (overlapEnd > overlapStart) {
 				float weight = (overlapEnd - overlapStart) / freqResolution;
-				int32_t magnitude = fastPythag(spectrumFFTOutput[startBin].r, spectrumFFTOutput[startBin].i);
+				int32_t magnitude = fastPythag(fftResult.output[startBin].r, fftResult.output[startBin].i);
 				weightedSum += static_cast<float>(magnitude) * weight;
 				totalWeight += weight;
 			}
@@ -2476,7 +2544,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 		// Handle full bins in the middle (if any)
 		for (int32_t bin = startBin + 1; bin < endBin; bin++) {
 			if (bin >= 0 && bin < kSpectrumFFTOutputSize) {
-				int32_t magnitude = fastPythag(spectrumFFTOutput[bin].r, spectrumFFTOutput[bin].i);
+				int32_t magnitude = fastPythag(fftResult.output[bin].r, fftResult.output[bin].i);
 				weightedSum += static_cast<float>(magnitude);
 				totalWeight += 1.0f;
 			}
@@ -2489,7 +2557,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 			float overlapEnd = std::min(upperFreq, (endBin + 1) * freqResolution);
 			if (overlapEnd > overlapStart) {
 				float weight = (overlapEnd - overlapStart) / freqResolution;
-				int32_t magnitude = fastPythag(spectrumFFTOutput[endBin].r, spectrumFFTOutput[endBin].i);
+				int32_t magnitude = fastPythag(fftResult.output[endBin].r, fftResult.output[endBin].i);
 				weightedSum += static_cast<float>(magnitude) * weight;
 				totalWeight += weight;
 			}
@@ -2506,14 +2574,23 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 		float amplitude = avgMagnitudeFloat / static_cast<float>(kFixedReferenceMagnitude);
 		amplitude = std::clamp(amplitude, 0.0f, 1.0f);
 
-		// Apply compression formula: (amplitude^0.45) * ((frequency/1000)^0.075)
-		// The 0.45 power compresses dynamics (soft knee effect)
-		// The (frequency/1000)^0.075 term provides subtle high-frequency boost while reducing low-end dominance
-		float display_value = std::pow(amplitude, 0.45f) * std::pow(centerFreq / 1000.0f, 0.075f);
+		// Apply compression formula: (amplitude^kCompressionExponent) *
+		// ((frequency/kFrequencyNormalizationHz)^kFrequencyBoostExponent) The compression exponent compresses dynamics
+		// (soft knee effect) The frequency boost term provides subtle high-frequency boost while reducing low-end
+		// dominance
+		float display_value = std::pow(amplitude, kCompressionExponent)
+		                      * std::pow(centerFreq / kFrequencyNormalizationHz, kFrequencyBoostExponent);
 
-		// Apply smoothing filter for stability (smoothed = smoothed*0.8 + display_value*0.2)
-		equalizerSmoothedValues[bar] = equalizerSmoothedValues[bar] * 0.8f + display_value * 0.2f;
-		display_value = equalizerSmoothedValues[bar];
+		// Apply smoothing filter for stability (first-order IIR: smoothed = alpha*old + beta*new)
+		// Only use smoothing buffer when in equalizer mode (conditional memory usage)
+		uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+		if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+			equalizerSmoothedValues[bar] =
+			    equalizerSmoothedValues[bar] * kSmoothingAlpha + display_value * kSmoothingBeta;
+			display_value = equalizerSmoothedValues[bar];
+		}
+		// If not in equalizer mode, use display_value directly (skip smoothing)
+		// This shouldn't happen since we're in renderVisualizerEqualizer, but handle gracefully
 
 		// Clamp display_value to valid range and scale to graph height
 		display_value = std::clamp(display_value, 0.0f, 1.0f);
@@ -2539,36 +2616,42 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 		}
 
 		// Update peak tracking - work in normalized 0-1 range (height normalized by graph height)
-		float normalizedHeight = static_cast<float>(scaledHeight) / static_cast<float>(kGraphHeight);
-		normalizedHeight = std::min(1.0f, normalizedHeight); // Clamp to 0-1 range
+		// Only use peak tracking arrays when in equalizer mode (conditional memory usage)
+		uint32_t peakVisualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+		if (peakVisualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+			float normalizedHeight = static_cast<float>(scaledHeight) / static_cast<float>(kGraphHeight);
+			normalizedHeight = std::min(1.0f, normalizedHeight); // Clamp to 0-1 range
 
-		if (normalizedHeight > equalizerPeakHeights[bar]) {
-			// New peak reached - set peak to current height and reset decay
-			equalizerPeakHeights[bar] = normalizedHeight;
-			equalizerPeakDecay[bar] = 0.0f;
-		}
-		else {
-			// Accumulate decay and apply squared decay formula (exactly like reference)
-			equalizerPeakDecay[bar] += kEqualizerPeakDecayRate;
-			equalizerPeakHeights[bar] = std::max(
-			    normalizedHeight, equalizerPeakHeights[bar] - equalizerPeakDecay[bar] * equalizerPeakDecay[bar]);
-		}
-
-		// Draw peak indicator as thicker horizontal line (3 pixels thick, matching reference)
-		// Convert normalized peak height back to pixels for drawing
-		if (equalizerPeakHeights[bar] > 0.0f) {
-			int32_t peakHeightPixels =
-			    static_cast<int32_t>(equalizerPeakHeights[bar] * static_cast<float>(kGraphHeight));
-			int32_t peakY = kGraphMaxY - peakHeightPixels;
-			peakY = std::clamp(peakY, kGraphMinY, kGraphMaxY);
-
-			// Draw 3-pixel thick line (peak line + one pixel above + one pixel below if within bounds)
-			canvas.drawHorizontalLine(peakY, barLeftX, barRightX);
-			if (peakY > kGraphMinY) {
-				canvas.drawHorizontalLine(peakY - 1, barLeftX, barRightX);
+			if (normalizedHeight > equalizerPeakHeights[bar]) {
+				// New peak reached - set peak to current height and reset decay
+				equalizerPeakHeights[bar] = normalizedHeight;
+				equalizerPeakDecay[bar] = 0.0f;
 			}
-			if (peakY < kGraphMaxY) {
-				canvas.drawHorizontalLine(peakY + 1, barLeftX, barRightX);
+			else {
+				// Accumulate decay and apply squared decay formula
+				// Peak decays using squared decay: peak = max(current, peak - decay^2)
+				// This provides smooth exponential-like decay that slows down as peak approaches current value
+				equalizerPeakDecay[bar] += kPeakDecayRate;
+				equalizerPeakHeights[bar] = std::max(
+				    normalizedHeight, equalizerPeakHeights[bar] - equalizerPeakDecay[bar] * equalizerPeakDecay[bar]);
+			}
+
+			// Draw peak indicator as thicker horizontal line (3 pixels thick, matching reference)
+			// Convert normalized peak height back to pixels for drawing
+			if (equalizerPeakHeights[bar] > 0.0f) {
+				int32_t peakHeightPixels =
+				    static_cast<int32_t>(equalizerPeakHeights[bar] * static_cast<float>(kGraphHeight));
+				int32_t peakY = kGraphMaxY - peakHeightPixels;
+				peakY = std::clamp(peakY, kGraphMinY, kGraphMaxY);
+
+				// Draw 3-pixel thick line (peak line + one pixel above + one pixel below if within bounds)
+				canvas.drawHorizontalLine(peakY, barLeftX, barRightX);
+				if (peakY > kGraphMinY) {
+					canvas.drawHorizontalLine(peakY - 1, barLeftX, barRightX);
+				}
+				if (peakY < kGraphMaxY) {
+					canvas.drawHorizontalLine(peakY + 1, barLeftX, barRightX);
+				}
 			}
 		}
 	}
