@@ -1927,7 +1927,9 @@ float equalizerPeakDecay[kEqualizerNumBars] = {0.0f};
 constexpr float kEqualizerPeakDecayRate = 0.005f; // Same as PEAK_DECAY_RATE in reference
 
 // Static smoothing arrays for visual compression (optional time-averaging)
-float spectrumSmoothedValues[kSpectrumFFTOutputSize] = {0.0f};
+// Use per-pixel smoothing for spectrum to avoid conflicts when multiple pixels map to same bin
+constexpr int32_t kMaxSpectrumPixels = 128; // Max display width (OLED is typically 128 pixels wide)
+float spectrumSmoothedValues[kMaxSpectrumPixels] = {0.0f};
 float equalizerSmoothedValues[kEqualizerNumBars] = {0.0f};
 
 // 16 frequency band center frequencies (Hz) - standard equalizer bands
@@ -2230,9 +2232,9 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	int32_t lastY = -1;
 	bool isFirstPoint = true;
 
-	// Map frequency bins to display pixels using logarithmic frequency scale
-	// This makes bass frequencies (20-200 Hz) take up more screen space, which is more musical
-	// since human hearing is logarithmic
+	// Map frequency bins to display pixels using modified logarithmic frequency scale
+	// Bass frequencies (20-200 Hz) are compressed to take up less horizontal space
+	// while keeping the rest of the frequency range proportional and natural
 	constexpr int32_t kNumBins = kSpectrumFFTOutputSize;                    // 129 bins
 	constexpr int32_t kNumPixels = kGraphMaxX - kGraphMinX + 1;             // 124 pixels
 	constexpr float kMinFrequency = 20.0f;                                  // Start at 20 Hz for bass
@@ -2241,12 +2243,17 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	// Precompute logarithmic scale constant: log10(sample_rate / 2 / 20)
 	const float logScaleConstant = std::log10(kMaxFrequency / kMinFrequency);
 
+	// Frequency compression exponent: 0.7 compresses bass range (20-200 Hz) by ~half
+	// while keeping mids and highs readable and proportional
+	constexpr float kFrequencyCompressionExponent = 0.7f;
+
 	for (int32_t pixel = 0; pixel < kNumPixels; pixel++) {
-		// Map pixel to frequency using logarithmic scale
-		// Formula: x = log10(f / 20) / log10(sample_rate / 2 / 20)
-		// Rearranged: f = 20 * 10^(x * log10(sample_rate / 2 / 20))
+		// Map pixel to frequency using modified logarithmic scale with compression
+		// Apply power curve to compress low frequencies (bass range) more than high frequencies
+		// Formula: compressedX = normalizedX^exponent, then f = 20 * 10^(compressedX * log10(sample_rate / 2 / 20))
 		float normalizedX = static_cast<float>(pixel) / static_cast<float>(kNumPixels - 1);
-		float frequency = kMinFrequency * std::pow(10.0f, normalizedX * logScaleConstant);
+		float compressedX = std::pow(normalizedX, kFrequencyCompressionExponent);
+		float frequency = kMinFrequency * std::pow(10.0f, compressedX * logScaleConstant);
 
 		// Map frequency to FFT bin index
 		// Bin i represents frequency: f_i = i * sample_rate / kSpectrumFFTSize
@@ -2283,8 +2290,12 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 		float display_value = std::pow(amplitude, 0.45f) * std::pow(frequency / 1000.0f, 0.075f);
 
 		// Apply smoothing filter for stability (smoothed = smoothed*0.8 + display_value*0.2)
-		spectrumSmoothedValues[binIndexLow] = spectrumSmoothedValues[binIndexLow] * 0.8f + display_value * 0.2f;
-		display_value = spectrumSmoothedValues[binIndexLow];
+		// Use per-pixel smoothing instead of per-bin to avoid conflicts when multiple pixels map to same bin
+		// This prevents stepping artifacts, especially at low frequencies after compression
+		if (pixel < kMaxSpectrumPixels) {
+			spectrumSmoothedValues[pixel] = spectrumSmoothedValues[pixel] * 0.8f + display_value * 0.2f;
+			display_value = spectrumSmoothedValues[pixel];
+		}
 
 		// Clamp display_value to valid range and scale to graph height
 		display_value = std::clamp(display_value, 0.0f, 1.0f);
