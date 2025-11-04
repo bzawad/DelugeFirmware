@@ -109,7 +109,7 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 		return;
 	}
 
-	else if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
+	if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
 		Output* output = outputsOnScreen[yPressedEffective];
 		view.displayOutputName(output);
 	}

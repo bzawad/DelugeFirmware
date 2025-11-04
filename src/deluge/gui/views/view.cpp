@@ -88,8 +88,10 @@
 #include "storage/file_item.h"
 #include "storage/flash_storage.h"
 #include "storage/storage_manager.h"
+#include "util/fixedpoint.h"
 #include "util/functions.h"
 #include <cmath>
+#include <numbers>
 
 namespace params = deluge::modulation::params;
 namespace encoders = deluge::hid::encoders;
@@ -1934,12 +1936,11 @@ void initSpectrumHanningWindow() {
 	}
 	initialized = true;
 
-	constexpr float kPi = 3.14159265358979323846f;
 	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
 		// Hanning window: w(n) = 0.5 * (1 - cos(2πn/(N-1)))
 		// Convert to Q31 format (multiply by 2^31)
-		float windowValue = 0.5f * (1.0f - std::cos(2.0f * kPi * i / (kSpectrumFFTSize - 1)));
-		spectrumHanningWindow[i] = static_cast<int32_t>(windowValue * 2147483648.0f); // 2^31
+		float windowValue = 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * i / (kSpectrumFFTSize - 1)));
+		spectrumHanningWindow[i] = static_cast<int32_t>(windowValue * ONE_Q31f);
 	}
 }
 
@@ -2252,6 +2253,9 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	using namespace deluge::hid::display;
 	using namespace AudioEngine;
 
+	// Cache visualizer mode to avoid redundant runtime feature settings queries
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+
 	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
 	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
 	constexpr int32_t kMargin = 2;
@@ -2287,9 +2291,6 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	// Clear the visualizer area before drawing
 	canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 
-	// Sample rate is 44.1kHz (as per existing code comments)
-	constexpr float kSampleRate = 44100.0f;
-
 	// Render spectrum line graph (low frequencies on left, high on right)
 	int32_t lastX = -1;
 	int32_t lastY = -1;
@@ -2298,10 +2299,10 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	// Map frequency bins to display pixels using modified logarithmic frequency scale
 	// Bass frequencies (20-200 Hz) are compressed to take up less horizontal space
 	// while keeping the rest of the frequency range proportional and natural
-	constexpr int32_t kNumBins = kSpectrumFFTOutputSize;                    // 129 bins
-	constexpr int32_t kNumPixels = kGraphMaxX - kGraphMinX + 1;             // 124 pixels
-	constexpr float kMinFrequency = 20.0f;                                  // Start at 20 Hz for bass
-	constexpr float kMaxFrequency = static_cast<float>(kSampleRate) / 2.0f; // Nyquist frequency
+	constexpr int32_t kNumBins = kSpectrumFFTOutputSize;                      // 129 bins
+	constexpr int32_t kNumPixels = kGraphMaxX - kGraphMinX + 1;               // 124 pixels
+	constexpr float kMinFrequency = 20.0f;                                    // Start at 20 Hz for bass
+	constexpr float kMaxFrequency = static_cast<float>(::kSampleRate) / 2.0f; // Nyquist frequency
 
 	// Precompute logarithmic scale constant: log10(sample_rate / 2 / 20)
 	const float logScaleConstant = std::log10(kMaxFrequency / kMinFrequency);
@@ -2321,7 +2322,7 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 		// Map frequency to FFT bin index
 		// Bin i represents frequency: f_i = i * sample_rate / kSpectrumFFTSize
 		// So: bin = frequency * kSpectrumFFTSize / sample_rate
-		float binFloat = frequency * static_cast<float>(kSpectrumFFTSize) / static_cast<float>(kSampleRate);
+		float binFloat = frequency * static_cast<float>(kSpectrumFFTSize) / static_cast<float>(::kSampleRate);
 
 		// Use linear interpolation between adjacent bins to avoid stepping artifacts
 		// when multiple pixels map to the same bin (especially at low frequencies)
@@ -2358,7 +2359,6 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 		// Use per-pixel smoothing instead of per-bin to avoid conflicts when multiple pixels map to same bin
 		// This prevents stepping artifacts, especially at low frequencies after compression
 		// Only use smoothing buffer when in spectrum mode (conditional memory usage)
-		uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 		if (pixel < kMaxSpectrumPixels && visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
 			spectrumSmoothedValues[pixel] =
 			    spectrumSmoothedValues[pixel] * kSmoothingAlpha + display_value * kSmoothingBeta;
@@ -2416,6 +2416,9 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	using namespace deluge::hid::display;
 	using namespace AudioEngine;
 
+	// Cache visualizer mode to avoid redundant runtime feature settings queries
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+
 	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
 	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
 	constexpr int32_t kMargin = 2;
@@ -2424,9 +2427,6 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
 	constexpr int32_t kGraphMinY = OLED_MAIN_TOPMOST_PIXEL + kMargin;
 	constexpr int32_t kGraphMaxY = OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1;
-
-	// Sample rate is 44.1kHz (as per existing code comments)
-	constexpr float kSampleRate = 44100.0f;
 
 	// Compute FFT using shared helper function (with caching optimization)
 	FFTResult fftResult = computeVisualizerFFT();
@@ -2473,7 +2473,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	constexpr int32_t kEqualizerContentEndX = kGraphMaxX - kEqualizerMargin;
 
 	// Calculate frequency resolution per bin
-	float freqResolution = kSampleRate / static_cast<float>(kSpectrumFFTSize);
+	float freqResolution = static_cast<float>(::kSampleRate) / static_cast<float>(kSpectrumFFTSize);
 
 	// Render 16 frequency bars
 	for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
@@ -2583,7 +2583,6 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 
 		// Apply smoothing filter for stability (first-order IIR: smoothed = alpha*old + beta*new)
 		// Only use smoothing buffer when in equalizer mode (conditional memory usage)
-		uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 		if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 			equalizerSmoothedValues[bar] =
 			    equalizerSmoothedValues[bar] * kSmoothingAlpha + display_value * kSmoothingBeta;
@@ -2617,8 +2616,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 
 		// Update peak tracking - work in normalized 0-1 range (height normalized by graph height)
 		// Only use peak tracking arrays when in equalizer mode (conditional memory usage)
-		uint32_t peakVisualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-		if (peakVisualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+		if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 			float normalizedHeight = static_cast<float>(scaledHeight) / static_cast<float>(kGraphHeight);
 			normalizedHeight = std::min(1.0f, normalizedHeight); // Clamp to 0-1 range
 
