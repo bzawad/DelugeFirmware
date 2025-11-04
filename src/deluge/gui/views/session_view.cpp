@@ -1932,15 +1932,104 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		if (currentPlaybackMode == &session) {
 			if (session.launchEventAtSwungTickCount) {
 				intToString(session.numRepeatsTilLaunch, &loopsRemainingText[17]);
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText(loopsRemainingText);
+
+				// Check if visualizer is enabled AND actively running
+				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+				bool visualizer_active = false;
+				if (visualizer_enabled) {
+					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+					bool vu_meter_enabled = view.displayVUMeter;
+					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+					visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+				}
+
+				if (visualizer_active) {
+					// Use popup for active visualizer users
+					display->popupText(loopsRemainingText, PopupType::GENERAL);
+				}
+				else {
+					// Direct rendering for non-active visualizer users (original behavior)
+					// Cancel any existing popup first
+					display->cancelPopup();
+					deluge::hid::display::OLED::clearMainImage();
+					deluge::hid::display::OLED::drawPermanentPopupLookingText(loopsRemainingText);
+				}
+			}
+			else {
+				// Check if visualizer is active - if so, cancel any lingering popup when launch event ends
+				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+				if (visualizer_enabled) {
+					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+					bool vu_meter_enabled = view.displayVUMeter;
+					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+					bool visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+
+					if (visualizer_active) {
+						// Cancel any lingering popup when the launch event countdown reaches zero
+						display->cancelPopup();
+					}
+				}
 			}
 		}
 
 		else { // Arrangement playback
 			if (playbackHandler.stopOutputRecordingAtLoopEnd) {
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText("Resampling will end...");
+				// Check if visualizer is enabled AND actively running
+				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+				bool visualizer_active = false;
+				if (visualizer_enabled) {
+					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+					bool vu_meter_enabled = view.displayVUMeter;
+					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+					visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+				}
+
+				if (visualizer_active) {
+					// Use popup for active visualizer users
+					display->popupText("Resampling will end...", PopupType::GENERAL);
+				}
+				else {
+					// Direct rendering for non-active visualizer users (original behavior)
+					// Cancel any existing popup first
+					display->cancelPopup();
+					deluge::hid::display::OLED::clearMainImage();
+					deluge::hid::display::OLED::drawPermanentPopupLookingText("Resampling will end...");
+				}
+			}
+			else {
+				// Check if visualizer is active - if so, cancel any lingering popup when resampling ends
+				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+				if (visualizer_enabled) {
+					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+					bool vu_meter_enabled = view.displayVUMeter;
+					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+					bool visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+
+					if (visualizer_active) {
+						// Cancel any lingering popup when the resampling notification ends
+						display->cancelPopup();
+					}
+				}
 			}
 		}
 	}
@@ -2423,12 +2512,59 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 				popupMsg.appendInt(quarterNotesRemaining);
 			}
 			if (display->haveOLED() && !ephemeral) {
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
-				deluge::hid::display::OLED::sendMainImage();
+				// Check if visualizer is enabled AND actively running
+				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+				bool visualizer_active = false;
+				if (visualizer_enabled) {
+					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+					bool vu_meter_enabled = view.displayVUMeter;
+					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+					visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+				}
+
+				if (visualizer_active) {
+					// Use popup for active visualizer users
+					display->popupText(popupMsg.c_str(), PopupType::GENERAL);
+				}
+				else {
+					// Direct rendering for non-active visualizer users (original behavior)
+					// Cancel any existing popup first
+					display->cancelPopup();
+					deluge::hid::display::OLED::clearMainImage();
+					deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
+					deluge::hid::display::OLED::sendMainImage();
+				}
 			}
 			else {
 				display->displayPopup(popupMsg.c_str(), 1, true);
+			}
+		}
+		else {
+			// If no popup was shown (sixteenthNotesRemaining <= 0), but visualizer is active,
+			// cancel any lingering popup from previous calls
+			if (display->haveOLED() && !ephemeral) {
+				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+				if (visualizer_enabled) {
+					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+					bool vu_meter_enabled = view.displayVUMeter;
+					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+					bool visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+
+					if (visualizer_active) {
+						// Cancel any lingering popup when the countdown reaches zero
+						display->cancelPopup();
+					}
+				}
 			}
 		}
 	}

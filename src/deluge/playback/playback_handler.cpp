@@ -2324,15 +2324,32 @@ void PlaybackHandler::displayTempoBPM(float tempoBPM) {
 	DEF_STACK_STRING_BUF(text, 27);
 	if (display->haveOLED()) {
 		UI* currentUI = getCurrentUI();
-		// if we're currently in song or arranger view, we'll render tempo on the display instead of a popup
-		if ((currentUI == &sessionView || currentUI == &arrangerView)
-		    && !deluge::hid::display::OLED::isPermanentPopupPresent()) {
+		bool isSessionOrArranger = (currentUI == &sessionView || currentUI == &arrangerView);
+
+		// Check if visualizer is enabled AND actively running
+		uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+		bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+		                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+		                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+		bool visualizer_active = false;
+		if (visualizer_enabled) {
+			// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
+			bool vu_meter_enabled = view.displayVUMeter;
+			ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
+			bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
+			visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
+		}
+
+		if (isSessionOrArranger && !deluge::hid::display::OLED::isPermanentPopupPresent() && !visualizer_active) {
+			// Direct canvas rendering (original behavior when visualizer not actively running)
 			sessionView.lastDisplayedTempo = tempoBPM;
 			getTempoStringForOLED(tempoBPM, text);
 			sessionView.displayTempoBPM(deluge::hid::display::OLED::main, text, true);
 			deluge::hid::display::OLED::markChanged();
 		}
 		else {
+			// Popup rendering (for active visualizer users or fallback cases)
 			text.append("Tempo: ");
 			getTempoStringForOLED(tempoBPM, text);
 			display->popupTextTemporary(text.c_str(), PopupType::TEMPO);
