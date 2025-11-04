@@ -1902,19 +1902,19 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 
-	int32_t modKnobMode = 0;
+	int32_t mod_knob_mode = 0;
 	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
 	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(
-	        canvas, view.displayVUMeter, visualizerEnabled, view.activeModControllableModelStack.modControllable,
-	        modKnobMode)) {
+	        canvas, view.displayVUMeter, visualizer_enabled, view.activeModControllableModelStack.modControllable,
+	        mod_knob_mode)) {
 		// Visualizer was rendered, skip normal rendering
 		return;
 	}
