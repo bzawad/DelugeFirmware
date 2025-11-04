@@ -288,14 +288,6 @@ void RuntimeFeatureSettings::readSettingsFromFile() {
 			currentValue = reader.readTagOrAttributeValueInt();
 			reader.exitTag();
 
-			// Migration: Convert old "oscilloscope" setting to "visualizer"
-			if (strcmp(currentName.get(), "oscilloscope") == 0) {
-				// Migrate old oscilloscope setting: On (1) -> Waveform (1), Off (0) -> Off (0)
-				settings[RuntimeFeatureSettingType::Visualizer].value =
-				    currentValue; // Values align: Off=0, On/Waveform=1
-				continue;         // Skip adding to unknownSettings
-			}
-
 			bool found = false;
 			for (auto& setting : settings) {
 				if (strcmp(setting.xmlName.data(), currentName.get()) == 0) {
