@@ -104,7 +104,7 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	else if (view.potentiallyRenderVisualizer(canvas)) {
+	if (view.potentiallyRenderVisualizer(canvas)) {
 		// Visualizer was rendered, skip normal rendering
 		return;
 	}

@@ -1514,7 +1514,7 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 							// Refresh OLED if visualizer was previously displayed (need to show normal view when
 							// disabling)
 							if (visualizerWasDisplayed) {
-								renderUIsForOled(); // refresh OLED to clear visualizer
+								renderUIsForOled();
 							}
 						}
 					}
@@ -1524,7 +1524,7 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 					}
 					// refresh OLED if visualizer is now displayed (when enabling)
 					if (displayVisualizer) {
-						renderUIsForOled(); // refresh OLED to show visualizer
+						renderUIsForOled();
 					}
 				}
 
@@ -1882,9 +1882,6 @@ constexpr int32_t kSpectrumFFTSize = 256;
 constexpr int32_t kSpectrumFFTMagnitude = 8;                            // 2^8 = 256
 constexpr int32_t kSpectrumFFTOutputSize = (kSpectrumFFTSize >> 1) + 1; // 129 bins
 
-// Static FFT config (lazily initialized)
-ne10_fft_r2c_cfg_int32_t spectrumFFTConfig = nullptr;
-
 // Static FFT buffers
 int32_t spectrumFFTInput[kSpectrumFFTSize];
 ne10_fft_cpx_int32_t spectrumFFTOutput[kSpectrumFFTOutputSize];
@@ -1909,22 +1906,31 @@ void initSpectrumHanningWindow() {
 	}
 }
 
-// Get or initialize FFT config
-ne10_fft_r2c_cfg_int32_t getSpectrumFFTConfig() {
-	if (spectrumFFTConfig == nullptr) {
-		spectrumFFTConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
+// Check if FFT output indicates silence by examining representative bins
+bool isFFTSilent(const ne10_fft_cpx_int32_t* fftOutput, int32_t threshold) {
+	int32_t sampleMagnitude =
+	    fastPythag(fftOutput[kSpectrumFFTOutputSize / 2].r, fftOutput[kSpectrumFFTOutputSize / 2].i);
+	if (sampleMagnitude < threshold) {
+		// Check a few more bins to confirm silence
+		for (int32_t i = 0; i < kSpectrumFFTOutputSize; i += 16) {
+			int32_t mag = fastPythag(fftOutput[i].r, fftOutput[i].i);
+			if (mag >= threshold) {
+				return false;
+			}
+		}
+		return true;
 	}
-	return spectrumFFTConfig;
+	return false;
 }
 
 // Static peak tracking arrays for equalizer visualizer
-// Store peak heights in normalized 0-1 range (like reference) for proper decay scaling
+// Store peak heights in normalized 0-1 range for proper decay scaling
 constexpr int32_t kEqualizerNumBars = 16;
 float equalizerPeakHeights[kEqualizerNumBars] = {0.0f};
 float equalizerPeakDecay[kEqualizerNumBars] = {0.0f};
 
-// Peak decay rate constant - matches reference implementation exactly
-constexpr float kEqualizerPeakDecayRate = 0.005f; // Same as PEAK_DECAY_RATE in reference
+// Peak decay rate constant (decay rate per frame)
+constexpr float kEqualizerPeakDecayRate = 0.005f;
 
 // Static smoothing arrays for visual compression (optional time-averaging)
 // Use per-pixel smoothing for spectrum to avoid conflicts when multiple pixels map to same bin
@@ -2008,18 +2014,14 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 	}
 
 	// Fixed reference amplitude for fixed-amplitude display aligned with VU meter
-	// UV meter shows clipping at approxRMSLevel = 16.7 (log(2^24))
-	// We want waveform to align: when UV is in red (clipping), waveform should reach peak
+	// When VU meter shows clipping, waveform should reach peak
 	// Samples are in Q15 format (range ~-32768 to +32768)
-	// Use a much smaller reference to ensure visibility of typical audio
-	// This matches typical audio levels that should be visible
-	constexpr int32_t kFixedReferenceMagnitude = 125; // Reference for typical audio levels (~-78dBFS), 8x amplitude
+	constexpr int32_t kFixedReferenceMagnitude =
+	    125; // Reference for typical audio levels (~-78dBFS), calibrated for waveform visibility
 
 	// Check for silence by examining a few representative samples
 	// If all samples are very small, draw baseline
 	constexpr int32_t kSilenceThreshold = 10; // Threshold for detecting silence
-	uint32_t sampleIndex = 0;
-	uint32_t remainderAccumulator = 0;
 	int32_t sampleMagnitude =
 	    std::abs(visualizerSampleBuffer[(readStartPos + sampleCount / 2) % kVisualizerBufferSize]);
 	if (sampleMagnitude < kSilenceThreshold) {
@@ -2050,8 +2052,8 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 
 	// Draw waveform - spread samples evenly across full width
 	// Reset drawing state to prevent connecting to previous frame (fixes vertical line at start)
-	sampleIndex = 0;
-	remainderAccumulator = 0;
+	uint32_t sampleIndex = 0;
+	uint32_t remainderAccumulator = 0;
 	int32_t lastX = -1;
 	int32_t lastY = -1;
 	bool isFirstPoint = true;
@@ -2152,7 +2154,7 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	}
 
 	// Get FFT config (lazy initialization)
-	ne10_fft_r2c_cfg_int32_t fftConfig = getSpectrumFFTConfig();
+	ne10_fft_r2c_cfg_int32_t fftConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
 	if (fftConfig == nullptr) {
 		// FFT config not available, draw empty
 		return;
@@ -2185,40 +2187,20 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	// Perform FFT (real-to-complex)
 	ne10_fft_r2c_1d_int32_neon(spectrumFFTOutput, spectrumFFTInput, fftConfig, false);
 
-	// Fixed reference magnitude for fixed-amplitude display aligned with UV meter
-	// UV meter shows clipping at approxRMSLevel = 16.7 (log(2^24))
-	// We want spectrum to align: when UV is in red (clipping), spectrum should be at peak
-	// This value represents the expected FFT magnitude when audio is at clipping level
-	// Using a fixed reference means actual signal levels are displayed consistently
-	// FFT input is Q15, output is Q31 complex, magnitude from fastPythag scales accordingly
-	// This value needs to be calibrated so that when audio reaches clipping (UV in red),
-	// the spectrum reaches peak. Higher value = more headroom, lower value = more sensitive
-	// Increased significantly to prevent peaking at normal volumes
-	// FFT magnitudes from Q31 output can be very large, so this needs to be quite high
-	constexpr int32_t kFixedReferenceMagnitude = 50000000;
+	// Fixed reference magnitude for fixed-amplitude display aligned with VU meter
+	// When VU meter shows clipping, spectrum should be at peak
+	// FFT input is Q15, output is Q31 complex, so this value accounts for the magnitude scaling
+	constexpr int32_t kFixedReferenceMagnitude = 50000000; // Calibrated for FFT magnitude scaling (Q31 output)
 
 	// Check for silence by examining a few representative bins
 	// If all bins are very small, draw baseline
 	constexpr int32_t kSilenceThreshold = 100; // Threshold for detecting silence
-	int32_t sampleMagnitude =
-	    fastPythag(spectrumFFTOutput[kSpectrumFFTOutputSize / 2].r, spectrumFFTOutput[kSpectrumFFTOutputSize / 2].i);
-	if (sampleMagnitude < kSilenceThreshold) {
-		// Check a few more bins to confirm silence
-		bool isSilent = true;
-		for (int32_t i = 0; i < kSpectrumFFTOutputSize; i += 16) {
-			int32_t mag = fastPythag(spectrumFFTOutput[i].r, spectrumFFTOutput[i].i);
-			if (mag >= kSilenceThreshold) {
-				isSilent = false;
-				break;
-			}
-		}
-		if (isSilent) {
-			canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
-			// Draw baseline at bottom (zero line for spectrum)
-			canvas.drawHorizontalLine(kGraphMaxY, kGraphMinX, kGraphMaxX);
-			OLED::markChanged();
-			return;
-		}
+	if (isFFTSilent(spectrumFFTOutput, kSilenceThreshold)) {
+		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
+		// Draw baseline at bottom (zero line for spectrum)
+		canvas.drawHorizontalLine(kGraphMaxY, kGraphMinX, kGraphMaxX);
+		OLED::markChanged();
+		return;
 	}
 
 	// Clear the visualizer area before drawing
@@ -2359,7 +2341,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	}
 
 	// Get FFT config (lazy initialization)
-	ne10_fft_r2c_cfg_int32_t fftConfig = getSpectrumFFTConfig();
+	ne10_fft_r2c_cfg_int32_t fftConfig = FFTConfigManager::getConfig(kSpectrumFFTMagnitude);
 	if (fftConfig == nullptr) {
 		// FFT config not available, draw empty
 		return;
@@ -2392,42 +2374,28 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	// Perform FFT (real-to-complex)
 	ne10_fft_r2c_1d_int32_neon(spectrumFFTOutput, spectrumFFTInput, fftConfig, false);
 
-	// Fixed reference magnitude for fixed-amplitude display aligned with UV meter
-	// Same as spectrum visualizer for consistency
-	constexpr int32_t kFixedReferenceMagnitude = 50000000;
+	// Fixed reference magnitude for fixed-amplitude display aligned with VU meter
+	constexpr int32_t kFixedReferenceMagnitude = 50000000; // Calibrated for FFT magnitude scaling (Q31 output)
 
 	// Check for silence by examining a few representative bins
 	// If all bins are very small, draw baseline
 	constexpr int32_t kSilenceThreshold = 100; // Threshold for detecting silence
-	int32_t sampleMagnitude =
-	    fastPythag(spectrumFFTOutput[kSpectrumFFTOutputSize / 2].r, spectrumFFTOutput[kSpectrumFFTOutputSize / 2].i);
-	if (sampleMagnitude < kSilenceThreshold) {
-		// Check a few more bins to confirm silence
-		bool isSilent = true;
-		for (int32_t i = 0; i < kSpectrumFFTOutputSize; i += 16) {
-			int32_t mag = fastPythag(spectrumFFTOutput[i].r, spectrumFFTOutput[i].i);
-			if (mag >= kSilenceThreshold) {
-				isSilent = false;
-				break;
-			}
-		}
-		if (isSilent) {
-			canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
-			// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
-			constexpr int32_t kBarWidth = 5;
-			constexpr int32_t kBarGap = 2;
-			constexpr int32_t kEqualizerMargin = 7;
-			constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
+	if (isFFTSilent(spectrumFFTOutput, kSilenceThreshold)) {
+		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
+		// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
+		constexpr int32_t kBarWidth = 5;
+		constexpr int32_t kBarGap = 2;
+		constexpr int32_t kEqualizerMargin = 7;
+		constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
 
-			for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
-				int32_t barLeftX = kEqualizerContentStartX + (bar * (kBarWidth + kBarGap));
-				int32_t barRightX = barLeftX + kBarWidth - 1;
-				// Draw 1-pixel baseline at bottom of each bar location
-				canvas.drawHorizontalLine(kGraphMaxY, barLeftX, barRightX);
-			}
-			OLED::markChanged();
-			return;
+		for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
+			int32_t barLeftX = kEqualizerContentStartX + (bar * (kBarWidth + kBarGap));
+			int32_t barRightX = barLeftX + kBarWidth - 1;
+			// Draw 1-pixel baseline at bottom of each bar location
+			canvas.drawHorizontalLine(kGraphMaxY, barLeftX, barRightX);
 		}
+		OLED::markChanged();
+		return;
 	}
 
 	// Clear the visualizer area before drawing
@@ -2570,8 +2538,7 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 			canvas.drawVerticalLine(x, barTopY, barBottomY);
 		}
 
-		// Update peak tracking - matches reference implementation exactly
-		// Work in normalized 0-1 range (height normalized by graph height) like reference
+		// Update peak tracking - work in normalized 0-1 range (height normalized by graph height)
 		float normalizedHeight = static_cast<float>(scaledHeight) / static_cast<float>(kGraphHeight);
 		normalizedHeight = std::min(1.0f, normalizedHeight); // Clamp to 0-1 range
 
@@ -2655,6 +2622,7 @@ void View::requestVisualizerUpdateIfNeeded() {
 
 	if (displayVisualizer && visualizerEnabled && displayVUMeter && activeModControllableModelStack.modControllable
 	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0) {
+		// Frame counter overflow is handled correctly by modulo arithmetic
 		visualizerFrameCounter++;
 		// Update every N frames for ~30fps (reduce CPU usage)
 		if ((visualizerFrameCounter % kVisualizerFrameSkip) == 0) {
