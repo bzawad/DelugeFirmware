@@ -1926,6 +1926,10 @@ float equalizerPeakDecay[kEqualizerNumBars] = {0.0f};
 // Peak decay rate constant - matches reference implementation exactly
 constexpr float kEqualizerPeakDecayRate = 0.005f; // Same as PEAK_DECAY_RATE in reference
 
+// Static smoothing arrays for visual compression (optional time-averaging)
+float spectrumSmoothedValues[kSpectrumFFTOutputSize] = {0.0f};
+float equalizerSmoothedValues[kEqualizerNumBars] = {0.0f};
+
 // 8 frequency band center frequencies (Hz) - standard equalizer bands
 // Band 1: 31 Hz (Sub-bass), 2: 63 Hz (Bass body), 3: 125 Hz (Upper bass), 4: 250 Hz (Low mids),
 // 5: 500 Hz (Midrange), 6: 1 kHz (Presence), 7: 2 kHz (Upper mids), 8: 8 kHz (Treble/air)
@@ -2215,6 +2219,9 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 	// Clear the visualizer area before drawing
 	canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 
+	// Sample rate is 44.1kHz (as per existing code comments)
+	constexpr float kSampleRate = 44100.0f;
+
 	// Render spectrum line graph (low frequencies on left, high on right)
 	int32_t lastX = -1;
 	int32_t lastY = -1;
@@ -2261,18 +2268,24 @@ void View::renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& c
 		// Use 64-bit intermediate to prevent overflow during calculation
 		float magnitudeFloat =
 		    static_cast<float>(magnitudeLow) * (1.0f - fraction) + static_cast<float>(magnitudeHigh) * fraction;
-		int32_t magnitude = static_cast<int32_t>(magnitudeFloat);
 
-		// Scale magnitude linearly to fixed reference (fixed-amplitude display)
-		// Map magnitude from [0, kFixedReferenceMagnitude] to [0, kGraphHeight]
-		// Using fixed reference means actual signal levels are displayed, not auto-scaled
-		int32_t scaledHeight = 0;
-		if (magnitude > 0) {
-			// Scale linearly: height = (magnitude * kGraphHeight) / kFixedReferenceMagnitude
-			// Use 64-bit intermediate to prevent overflow
-			scaledHeight = static_cast<int32_t>((static_cast<int64_t>(magnitude) * static_cast<int64_t>(kGraphHeight))
-			                                    / kFixedReferenceMagnitude);
-		}
+		// Apply music sweet-spot visual compression
+		// Normalize amplitude to 0-1 range
+		float amplitude = magnitudeFloat / static_cast<float>(kFixedReferenceMagnitude);
+		amplitude = std::clamp(amplitude, 0.0f, 1.0f);
+
+		// Apply compression formula: (amplitude^0.45) * ((frequency/1000)^0.075)
+		// The 0.45 power compresses dynamics (soft knee effect)
+		// The (frequency/1000)^0.075 term provides subtle high-frequency boost while reducing low-end dominance
+		float display_value = std::pow(amplitude, 0.45f) * std::pow(frequency / 1000.0f, 0.075f);
+
+		// Apply smoothing filter for stability (smoothed = smoothed*0.8 + display_value*0.2)
+		spectrumSmoothedValues[binIndexLow] = spectrumSmoothedValues[binIndexLow] * 0.8f + display_value * 0.2f;
+		display_value = spectrumSmoothedValues[binIndexLow];
+
+		// Clamp display_value to valid range and scale to graph height
+		display_value = std::clamp(display_value, 0.0f, 1.0f);
+		int32_t scaledHeight = static_cast<int32_t>(display_value * static_cast<float>(kGraphHeight));
 
 		// Convert to pixel Y position (spectrum: baseline at bottom, magnitude grows upward)
 		// When magnitude is 0, y should be at bottom (kGraphMaxY)
@@ -2505,31 +2518,23 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 			avgMagnitudeFloat = weightedSum / totalWeight;
 		}
 
-		// For very low frequencies where multiple bars map to the same FFT bin,
-		// apply a frequency-dependent scaling to create visual differentiation.
-		// This helps separate bars that would otherwise show identical values.
-		// Use a gentle logarithmic scaling based on center frequency.
-		float frequencyScale = 1.0f;
-		if (centerFreq < 200.0f) {
-			// For frequencies below 200 Hz, apply scaling: log(f/20) / log(200/20)
-			// This creates gradual separation between bars at low frequencies
-			float logFactor = std::log10(centerFreq / 20.0f) / std::log10(200.0f / 20.0f);
-			// Scale from 0.8 to 1.2 to create visible differences without being too extreme
-			frequencyScale = 0.8f + 0.4f * logFactor;
-			avgMagnitudeFloat *= frequencyScale;
-		}
+		// Apply music sweet-spot visual compression
+		// Normalize amplitude to 0-1 range
+		float amplitude = avgMagnitudeFloat / static_cast<float>(kFixedReferenceMagnitude);
+		amplitude = std::clamp(amplitude, 0.0f, 1.0f);
 
-		int32_t avgMagnitude = static_cast<int32_t>(avgMagnitudeFloat);
+		// Apply compression formula: (amplitude^0.45) * ((frequency/1000)^0.075)
+		// The 0.45 power compresses dynamics (soft knee effect)
+		// The (frequency/1000)^0.075 term provides subtle high-frequency boost while reducing low-end dominance
+		float display_value = std::pow(amplitude, 0.45f) * std::pow(centerFreq / 1000.0f, 0.075f);
 
-		// Scale magnitude to bar height (similar to spectrum visualizer)
-		// Map magnitude from [0, kFixedReferenceMagnitude] to [0, kGraphHeight]
-		int32_t scaledHeight = 0;
-		if (avgMagnitude > 0) {
-			// Scale linearly: height = (magnitude * kGraphHeight) / kFixedReferenceMagnitude
-			// Use 64-bit intermediate to prevent overflow
-			scaledHeight = static_cast<int32_t>(
-			    (static_cast<int64_t>(avgMagnitude) * static_cast<int64_t>(kGraphHeight)) / kFixedReferenceMagnitude);
-		}
+		// Apply smoothing filter for stability (smoothed = smoothed*0.8 + display_value*0.2)
+		equalizerSmoothedValues[bar] = equalizerSmoothedValues[bar] * 0.8f + display_value * 0.2f;
+		display_value = equalizerSmoothedValues[bar];
+
+		// Clamp display_value to valid range and scale to graph height
+		display_value = std::clamp(display_value, 0.0f, 1.0f);
+		int32_t scaledHeight = static_cast<int32_t>(display_value * static_cast<float>(kGraphHeight));
 
 		// Clamp scaledHeight to graph height
 		scaledHeight = std::min(scaledHeight, kGraphHeight);
