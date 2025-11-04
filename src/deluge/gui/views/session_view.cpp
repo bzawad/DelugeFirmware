@@ -46,6 +46,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -1901,7 +1902,19 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	if (view.potentiallyRenderVisualizer(canvas)) {
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+	int32_t modKnobMode = 0;
+	if (view.activeModControllableModelStack.modControllable) {
+		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	}
+
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(
+	        canvas, view.displayVUMeter, visualizerEnabled, view.activeModControllableModelStack.modControllable,
+	        modKnobMode)) {
 		// Visualizer was rendered, skip normal rendering
 		return;
 	}
@@ -2210,7 +2223,18 @@ void SessionView::graphicsRoutine() {
 	}
 
 	// Request OLED refresh for visualizer if active (ensures continuous updates)
-	view.requestVisualizerUpdateIfNeeded();
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+
+	int32_t modKnobMode = 0;
+	if (view.activeModControllableModelStack.modControllable) {
+		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	}
+
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(
+	    view.displayVUMeter, visualizerEnabled, view.activeModControllableModelStack.modControllable, modKnobMode);
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);

@@ -146,12 +146,6 @@ public:
 	bool displayVUMeter;
 	bool potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]);
 
-	// visualizer rendering
-	bool displayVisualizer;
-	uint32_t visualizerFrameCounter;
-	bool potentiallyRenderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas);
-	void requestVisualizerUpdateIfNeeded();
-
 	void getParameterNameFromModEncoder(int32_t whichModEncoder, char* parameterName);
 
 	bool isClipContext();
@@ -167,12 +161,6 @@ private:
 	int32_t cachedMaxYDisplayForVUMeterR;
 	void renderVUMeter(int32_t maxYDisplay, int32_t xDisplay, RGB thisImage[][kDisplayWidth + kSideBarWidth]);
 	bool renderedVUMeter;
-
-	// visualizer rendering
-	void renderVisualizer(deluge::hid::display::oled_canvas::Canvas& canvas);
-	void renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& canvas);
-	void renderVisualizerSpectrum(deluge::hid::display::oled_canvas::Canvas& canvas);
-	void renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& canvas);
 
 	// mod encoder action
 	void modEncoderAction_nonExistentParam(int32_t whichModEncoder, int32_t offset,
