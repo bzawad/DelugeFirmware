@@ -31,6 +31,7 @@
 #include "gui/ui_timer_manager.h"
 #include "gui/views/view.h"
 #include "hid/display/display.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
 #include "io/debug/log.h"
@@ -153,11 +154,6 @@ Metronome metronome{};
 deluge::dsp::StereoSample<float> approxRMSLevel{0};
 deluge::dsp::AbsValueFollower envelopeFollower{};
 int32_t timeLastPopup{0};
-
-// Visualizer sample buffer
-alignas(CACHE_LINE_SIZE) int32_t visualizerSampleBuffer[kVisualizerBufferSize]{};
-std::atomic<uint32_t> visualizerWritePos{0};
-std::atomic<uint32_t> visualizerSampleCount{0};
 
 SoundDrum* sampleForPreview;
 ParamManagerForTimeline* paramManagerForSamplePreview;
@@ -619,39 +615,7 @@ void renderAudio(size_t numSamples) {
 
 	approxRMSLevel = envelopeFollower.calcApproxRMS(renderingBuffer);
 
-	// Sample audio for visualizer visualization (downsample for efficiency)
-	// Only sample if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode to save CPU cycles
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform
-	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum
-	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
-		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
-		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
-		constexpr uint32_t kVisualizerSampleInterval = 4;
-		// Q31 to Q15 conversion: shift right by 16 bits (31-15 = 16)
-		constexpr uint32_t kQ31ToQ15Shift = 16;
-		static uint32_t sampleCounter = 0;
-		sampleCounter++;
-		if (sampleCounter >= kVisualizerSampleInterval) {
-			sampleCounter = 0;
-			// Take a sample from the middle of the buffer for better representation
-			size_t midSample = numSamples / 2;
-			if (midSample < renderingBuffer.size()) {
-				// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
-				int32_t sampleL = renderingBuffer[midSample].l >> kQ31ToQ15Shift; // Convert Q31 to Q15 range
-				int32_t sampleR = renderingBuffer[midSample].r >> kQ31ToQ15Shift;
-				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
-
-				// Write to circular buffer (thread-safe for single writer, single reader)
-				uint32_t writePos = visualizerWritePos.load(std::memory_order_relaxed);
-				visualizerSampleBuffer[writePos] = combined;
-				visualizerWritePos.store((writePos + 1) % kVisualizerBufferSize, std::memory_order_release);
-				if (visualizerSampleCount.load(std::memory_order_relaxed) < kVisualizerBufferSize) {
-					visualizerSampleCount.fetch_add(1, std::memory_order_release);
-				}
-			}
-		}
-	}
+	deluge::hid::display::Visualizer::sampleAudioForDisplay(renderingBuffer, numSamples);
 
 	setMonitoringMode();
 

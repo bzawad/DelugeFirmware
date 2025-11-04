@@ -36,10 +36,9 @@ constexpr int32_t kDisplayMargin = 2; // Standard margin for visualizer display 
 
 // Helper function to get read start position from circular buffer
 uint32_t getVisualizerReadStartPos(uint32_t sampleCount) {
-	using namespace AudioEngine;
-	if (sampleCount >= kVisualizerBufferSize) {
+	if (sampleCount >= Visualizer::kVisualizerBufferSize) {
 		// Buffer is full, oldest sample is at writePos (next to be overwritten)
-		return visualizerWritePos.load(std::memory_order_acquire);
+		return Visualizer::visualizerWritePos.load(std::memory_order_acquire);
 	}
 	else {
 		// Buffer not full, start from beginning

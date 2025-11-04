@@ -24,6 +24,7 @@
 #include "hid/display/visualizer/visualizer_spectrum.h"
 #include "hid/display/visualizer/visualizer_waveform.h"
 #include "modulation/params/param.h"
+#include <atomic>
 
 // Forward declaration for global UI rendering function
 extern void renderUIsForOled();
@@ -33,6 +34,11 @@ namespace deluge::hid::display {
 // Static member variables
 bool Visualizer::displayVisualizer = false;
 uint32_t Visualizer::visualizerFrameCounter = 0;
+
+// Visualizer sample buffer initialization
+alignas(CACHE_LINE_SIZE) int32_t Visualizer::visualizerSampleBuffer[kVisualizerBufferSize]{};
+std::atomic<uint32_t> Visualizer::visualizerWritePos{0};
+std::atomic<uint32_t> Visualizer::visualizerSampleCount{0};
 
 /// Render visualizer waveform or spectrum on OLED display
 void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
@@ -130,6 +136,42 @@ void Visualizer::setEnabled(bool enabled) {
 
 bool Visualizer::isEnabled() {
 	return displayVisualizer;
+}
+
+void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderingBuffer, size_t numSamples) {
+	// Sample audio for visualizer visualization (downsample for efficiency)
+	// Only sample if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode to save CPU cycles
+	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform
+	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum
+	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
+		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
+		constexpr uint32_t kVisualizerSampleInterval = 4;
+		// Q31 to Q15 conversion: shift right by 16 bits (31-15 = 16)
+		constexpr uint32_t kQ31ToQ15Shift = 16;
+		static uint32_t sampleCounter = 0;
+		sampleCounter++;
+		if (sampleCounter >= kVisualizerSampleInterval) {
+			sampleCounter = 0;
+			// Take a sample from the middle of the buffer for better representation
+			size_t midSample = numSamples / 2;
+			if (midSample < renderingBuffer.size()) {
+				// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
+				int32_t sampleL = renderingBuffer[midSample].l >> kQ31ToQ15Shift; // Convert Q31 to Q15 range
+				int32_t sampleR = renderingBuffer[midSample].r >> kQ31ToQ15Shift;
+				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
+
+				// Write to circular buffer (thread-safe for single writer, single reader)
+				uint32_t writePos = visualizerWritePos.load(std::memory_order_relaxed);
+				visualizerSampleBuffer[writePos] = combined;
+				visualizerWritePos.store((writePos + 1) % kVisualizerBufferSize, std::memory_order_release);
+				if (visualizerSampleCount.load(std::memory_order_relaxed) < kVisualizerBufferSize) {
+					visualizerSampleCount.fetch_add(1, std::memory_order_release);
+				}
+			}
+		}
+	}
 }
 
 } // namespace deluge::hid::display

@@ -25,7 +25,6 @@
 #include "memory/object_pool.h"
 #include "model/output.h"
 #include "util/containers.h"
-#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -216,12 +215,6 @@ extern int32_t sizeLastSideChainHit;
 extern deluge::dsp::StereoSample<float> approxRMSLevel;
 extern deluge::dsp::AbsValueFollower envelopeFollower;
 extern TaskID routine_task_id;
-
-// Visualizer sample buffer
-constexpr size_t kVisualizerBufferSize = 256;
-extern int32_t visualizerSampleBuffer[kVisualizerBufferSize];
-extern std::atomic<uint32_t> visualizerWritePos;
-extern std::atomic<uint32_t> visualizerSampleCount;
 
 void feedReverbBackdoorForGrain(int index, q31_t value);
 

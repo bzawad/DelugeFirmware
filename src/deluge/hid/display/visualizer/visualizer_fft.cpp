@@ -17,6 +17,7 @@
 
 #include "visualizer_fft.h"
 #include "dsp/fft/fft_config_manager.h"
+#include "hid/display/visualizer.h"
 #include "processing/engines/audio_engine.h"
 #include "util/functions.h"
 #include "visualizer_common.h"
@@ -91,11 +92,10 @@ bool isFFTSilent(const ne10_fft_cpx_int32_t* fftOutput, int32_t threshold) {
 // Compute FFT for visualizer with caching optimization
 // Returns FFT output and validity flags
 FFTResult computeVisualizerFFT() {
-	using namespace AudioEngine;
 	FFTResult result = {nullptr, false, false};
 
 	// Read sample count atomically (single read is safe)
-	uint32_t sampleCount = visualizerSampleCount.load(std::memory_order_acquire);
+	uint32_t sampleCount = Visualizer::visualizerSampleCount.load(std::memory_order_acquire);
 	if (sampleCount < kSpectrumFFTSize) {
 		// Not enough samples yet
 		return result;
@@ -111,12 +111,12 @@ FFTResult computeVisualizerFFT() {
 	}
 
 	// Check if we can use cached FFT result
-	uint32_t currentWritePos = visualizerWritePos.load(std::memory_order_acquire);
+	uint32_t currentWritePos = Visualizer::visualizerWritePos.load(std::memory_order_acquire);
 	if (cachedFFT.isValid) {
 		// Calculate buffer position difference (handle wrap-around)
 		uint32_t posDiff = (currentWritePos >= cachedFFT.lastWritePos)
 		                       ? (currentWritePos - cachedFFT.lastWritePos)
-		                       : (kVisualizerBufferSize - cachedFFT.lastWritePos + currentWritePos);
+		                       : (Visualizer::kVisualizerBufferSize - cachedFFT.lastWritePos + currentWritePos);
 
 		// Only recompute if buffer has advanced significantly (>= 1/4 FFT size = kSpectrumFFTSize / 4)
 		// Cache threshold trade-off: Lower values (e.g., 1/8 FFT size) provide more frequent updates but higher CPU
@@ -141,10 +141,10 @@ FFTResult computeVisualizerFFT() {
 	// Result: (Q15 * Q31) >> kQ31ToQ15Shift = Q15
 	initSpectrumHanningWindow();
 	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
-		uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
-		// Buffer bounds check: visualizerSampleBuffer is guaranteed to be at least kVisualizerBufferSize
-		// and bufferIndex is modulo kVisualizerBufferSize, so it's always valid
-		int32_t sample = visualizerSampleBuffer[bufferIndex]; // Q15
+		uint32_t bufferIndex = (readStartPos + i) % Visualizer::kVisualizerBufferSize;
+		// Buffer bounds check: visualizerSampleBuffer is guaranteed to be at least Visualizer::kVisualizerBufferSize
+		// and bufferIndex is modulo Visualizer::kVisualizerBufferSize, so it's always valid
+		int32_t sample = Visualizer::visualizerSampleBuffer[bufferIndex]; // Q15
 
 		// Apply Hanning window: multiply Q15 sample by Q31 window, shift right by kQ31ToQ15Shift
 		// Use 64-bit intermediate to prevent overflow

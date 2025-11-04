@@ -16,6 +16,7 @@
 #include "visualizer_waveform.h"
 #include "hid/display/oled.h"
 #include "hid/display/oled_canvas/canvas.h"
+#include "hid/display/visualizer.h"
 #include "processing/engines/audio_engine.h"
 #include <algorithm>
 
@@ -46,7 +47,7 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 	constexpr int32_t kGraphHeight = kDisplayHeight - (kMargin * 2);
 
 	// Read sample count atomically (single read is safe)
-	uint32_t sampleCount = AudioEngine::visualizerSampleCount.load(std::memory_order_acquire);
+	uint32_t sampleCount = Visualizer::visualizerSampleCount.load(std::memory_order_acquire);
 	if (sampleCount < 2) {
 		// Not enough samples yet, draw empty
 		return;
@@ -72,13 +73,13 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 	// If all samples are very small, draw baseline
 	constexpr int32_t kSilenceThreshold = kWaveformSilenceThreshold;
 	int32_t sampleMagnitude = std::abs(
-	    AudioEngine::visualizerSampleBuffer[(readStartPos + sampleCount / 2) % AudioEngine::kVisualizerBufferSize]);
+	    Visualizer::visualizerSampleBuffer[(readStartPos + sampleCount / 2) % Visualizer::kVisualizerBufferSize]);
 	if (sampleMagnitude < kSilenceThreshold) {
 		// Check a few more samples to confirm silence
 		bool isSilent = true;
 		for (uint32_t i = 0; i < numSamplesToDisplay; i += kSilenceCheckInterval) {
-			uint32_t bufferIndex = (readStartPos + i) % AudioEngine::kVisualizerBufferSize;
-			int32_t mag = std::abs(AudioEngine::visualizerSampleBuffer[bufferIndex]);
+			uint32_t bufferIndex = (readStartPos + i) % Visualizer::kVisualizerBufferSize;
+			int32_t mag = std::abs(Visualizer::visualizerSampleBuffer[bufferIndex]);
 			if (mag >= kSilenceThreshold) {
 				isSilent = false;
 				break;
@@ -114,9 +115,9 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 
 	for (uint32_t i = 0; i < numSamplesToDisplay; i++) {
 		// Calculate buffer index directly to avoid nested loop
-		uint32_t bufferIndex = (readStartPos + sampleIndex) % AudioEngine::kVisualizerBufferSize;
+		uint32_t bufferIndex = (readStartPos + sampleIndex) % Visualizer::kVisualizerBufferSize;
 		// Get sample value
-		int32_t sample = AudioEngine::visualizerSampleBuffer[bufferIndex];
+		int32_t sample = Visualizer::visualizerSampleBuffer[bufferIndex];
 
 		// Calculate Y position using fixed amplitude scaling (center at kCenterY)
 		// Scale sample from [-kFixedReferenceMagnitude, +kFixedReferenceMagnitude] to display height
