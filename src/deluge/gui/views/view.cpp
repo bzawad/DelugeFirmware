@@ -1910,6 +1910,10 @@ constexpr int32_t kQ31ToQ15Shift = 16;        // Convert from Q31 to Q15 format 
 constexpr int32_t kSilenceCheckInterval = 16; // Interval for checking silence in loops (reduces CPU usage)
 constexpr int32_t kDisplayMargin = 2;         // Standard margin for visualizer display areas
 
+// Visualizer update and display constants
+constexpr uint32_t kMaxDisplaySamples = 48;  // Reduced for waveform-style sparse display
+constexpr uint32_t kVisualizerFrameSkip = 2; // Update every 2 frames (~30fps instead of ~60fps)
+
 // Static FFT buffers
 // Memory usage: ~5.5KB total
 // - visualizerSampleBuffer[256] = 1KB (used by all modes, in audio_engine.cpp)
@@ -2022,13 +2026,6 @@ FFTResult computeVisualizerFFT() {
 		// FFT config not available - this can happen during initialization or if memory allocation fails
 		// The visualizer will gracefully degrade by returning an invalid result, which causes
 		// the render functions to draw empty/blank displays rather than crashing
-		// Note: In a production system, this could trigger a fallback to waveform mode,
-		// but for simplicity we just skip rendering in spectrum/equalizer modes
-#ifdef DEBUG
-		// Debug assertion to catch FFT config failures during development
-		// In release builds, we gracefully handle this by returning invalid result
-		// (FFT config should normally be available, but we handle the edge case)
-#endif
 		return result;
 	}
 
@@ -2040,10 +2037,11 @@ FFTResult computeVisualizerFFT() {
 		                       ? (currentWritePos - cachedFFT.lastWritePos)
 		                       : (kVisualizerBufferSize - cachedFFT.lastWritePos + currentWritePos);
 
-		// Only recompute if buffer has advanced significantly (>= 64 samples = 1/4 FFT size)
-		// Cache threshold trade-off: Lower values (e.g., 32) provide more frequent updates but higher CPU usage.
-		// Higher values (e.g., 128) reduce CPU usage but may cause visual lag. Current value (64) balances
-		// real-time responsiveness with performance, updating approximately every 1.4ms at 44.1kHz sample rate.
+		// Only recompute if buffer has advanced significantly (>= 1/4 FFT size = kSpectrumFFTSize / 4)
+		// Cache threshold trade-off: Lower values (e.g., 1/8 FFT size) provide more frequent updates but higher CPU
+		// usage. Higher values (e.g., 1/2 FFT size) reduce CPU usage but may cause visual lag. Current value (1/4 FFT
+		// size) balances real-time responsiveness with performance, updating approximately every 1.4ms at 44.1kHz
+		// sample rate.
 		constexpr uint32_t kFFTCacheThreshold = kSpectrumFFTSize / 4;
 		if (posDiff < kFFTCacheThreshold) {
 			// Use cached result
@@ -2057,21 +2055,14 @@ FFTResult computeVisualizerFFT() {
 	// Calculate read start position from circular buffer
 	uint32_t readStartPos = getVisualizerReadStartPos(sampleCount);
 
-#ifdef DEBUG
-	// Debug assertion: Ensure buffer index is within valid range
-	// This helps catch potential buffer overflow issues during development
-#endif
-
 	// Copy samples and apply Hanning window
 	// Samples are in Q15 format, window is in Q31 format
 	// Result: (Q15 * Q31) >> kQ31ToQ15Shift = Q15
 	initSpectrumHanningWindow();
 	for (int32_t i = 0; i < kSpectrumFFTSize; i++) {
 		uint32_t bufferIndex = (readStartPos + i) % kVisualizerBufferSize;
-#ifdef DEBUG
 		// Buffer bounds check: visualizerSampleBuffer is guaranteed to be at least kVisualizerBufferSize
 		// and bufferIndex is modulo kVisualizerBufferSize, so it's always valid
-#endif
 		int32_t sample = visualizerSampleBuffer[bufferIndex]; // Q15
 
 		// Apply Hanning window: multiply Q15 sample by Q31 window, shift right by kQ31ToQ15Shift
@@ -2166,7 +2157,6 @@ void View::renderVisualizerWaveform(deluge::hid::display::oled_canvas::Canvas& c
 	}
 
 	// Determine how many samples to display - use fewer samples for waveform-style sparse display
-	constexpr uint32_t kMaxDisplaySamples = 48; // Reduced for waveform-style sparse display
 	uint32_t numSamplesToDisplay = std::min(sampleCount, kMaxDisplaySamples);
 
 	// Calculate step size for downsampling if we have more samples than pixels (integer arithmetic)
@@ -2598,6 +2588,15 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	constexpr int32_t kGraphMinY = OLED_MAIN_TOPMOST_PIXEL + kMargin;
 	constexpr int32_t kGraphMaxY = OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1;
 
+	// Bar layout constants: 16 bars with even margins and clean pixel alignment
+	// Bar width: 5 px, Gap: 2 px, Margins: 7 px each side = 124 px total
+	// Layout: 7px left margin + [5px bar + 2px gap] × 15 + 5px final bar + 7px right margin
+	constexpr int32_t kBarWidth = 5;
+	constexpr int32_t kBarGap = 2;
+	constexpr int32_t kEqualizerMargin = 7;
+	constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
+	constexpr int32_t kEqualizerContentEndX = kGraphMaxX - kEqualizerMargin;
+
 	// Compute FFT using shared helper function (with caching optimization)
 	FFTResult fftResult = computeVisualizerFFT();
 	if (!fftResult.isValid) {
@@ -2615,11 +2614,6 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 	if (fftResult.isSilent) {
 		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
 		// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
-		constexpr int32_t kBarWidth = 5;
-		constexpr int32_t kBarGap = 2;
-		constexpr int32_t kEqualizerMargin = 7;
-		constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
-
 		for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
 			int32_t barLeftX = kEqualizerContentStartX + (bar * (kBarWidth + kBarGap));
 			int32_t barRightX = barLeftX + kBarWidth - 1;
@@ -2632,15 +2626,6 @@ void View::renderVisualizerEqualizer(deluge::hid::display::oled_canvas::Canvas& 
 
 	// Clear the visualizer area before drawing
 	canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
-
-	// Bar layout: 16 bars with even margins and clean pixel alignment
-	// Bar width: 5 px, Gap: 2 px, Margins: 7 px each side = 124 px total
-	// Layout: 7px left margin + [5px bar + 2px gap] × 15 + 5px final bar + 7px right margin
-	constexpr int32_t kBarWidth = 5;
-	constexpr int32_t kBarGap = 2;
-	constexpr int32_t kEqualizerMargin = 7;
-	constexpr int32_t kEqualizerContentStartX = kGraphMinX + kEqualizerMargin;
-	constexpr int32_t kEqualizerContentEndX = kGraphMaxX - kEqualizerMargin;
 
 	// Calculate frequency resolution per bin
 	float freqResolution = static_cast<float>(::kSampleRate) / static_cast<float>(kSpectrumFFTSize);
@@ -2733,7 +2718,6 @@ bool View::potentiallyRenderVisualizer(deluge::hid::display::oled_canvas::Canvas
 void View::requestVisualizerUpdateIfNeeded() {
 	// Request OLED refresh for visualizer if active (ensures continuous updates)
 	// Use frame skipping to reduce CPU usage (update every 2 frames = ~30fps instead of ~60fps)
-	constexpr uint32_t kVisualizerFrameSkip = 2;
 	// Cache runtime feature check to avoid redundant calls
 	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)

@@ -628,7 +628,8 @@ void renderAudio(size_t numSamples) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
 		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
 		constexpr uint32_t kVisualizerSampleInterval = 4;
-		constexpr uint32_t kQ31ToQ15Shift = 16; // Convert from Q31 to Q15 format (31-15 = 16 bits)
+		// Q31 to Q15 conversion: shift right by 16 bits (31-15 = 16)
+		constexpr uint32_t kQ31ToQ15Shift = 16;
 		static uint32_t sampleCounter = 0;
 		sampleCounter++;
 		if (sampleCounter >= kVisualizerSampleInterval) {
