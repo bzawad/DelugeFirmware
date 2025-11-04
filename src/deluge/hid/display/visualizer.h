@@ -19,6 +19,7 @@
 
 #include "definitions_cxx.hpp"
 #include "dsp/fft/fft_config_manager.h"
+#include "hid/display/visualizer/visualizer_common.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "oled.h"
 #include "oled_canvas/canvas.h"
@@ -26,13 +27,6 @@
 
 // Forward declarations
 class ModControllable;
-
-// FFT computation result structure
-struct FFTResult {
-	ne10_fft_cpx_int32_t* output;
-	bool isValid;
-	bool isSilent;
-};
 
 namespace deluge::hid::display {
 
@@ -84,60 +78,6 @@ public:
 	/// Get whether visualizer display is enabled
 	/// @return true if visualizer display is enabled
 	static bool isEnabled();
-
-private:
-	/// Initialize Hanning window coefficients
-	static void initSpectrumHanningWindow();
-
-	/// Check if FFT output indicates silence
-	/// @param fftOutput FFT output buffer
-	/// @param threshold Silence detection threshold
-	/// @return true if silent
-	static bool isFFTSilent(const ne10_fft_cpx_int32_t* fftOutput, int32_t threshold);
-
-	/// Get read start position from circular buffer
-	/// @param sampleCount Current sample count
-	/// @return Read start position
-	static uint32_t getVisualizerReadStartPos(uint32_t sampleCount);
-
-	/// Apply music sweet-spot visual compression
-	/// @param amplitude Input amplitude (0-1 range)
-	/// @param frequency Frequency in Hz
-	/// @return Compressed amplitude
-	static float applyVisualizerCompression(float amplitude, float frequency);
-
-	/// Compute FFT for visualizer with caching optimization
-	/// @return FFT result structure with output and validity flags
-	static FFTResult computeVisualizerFFT();
-
-	/// Calculate frequency band range for equalizer bar
-	/// @param bar Bar index (0-15)
-	/// @param lowerFreq Output lower frequency
-	/// @param upperFreq Output upper frequency
-	static void calculateFrequencyBandRange(int32_t bar, float& lowerFreq, float& upperFreq);
-
-	/// Calculate weighted average magnitude for a frequency band
-	/// @param fftResult FFT computation result
-	/// @param lowerFreq Lower frequency bound
-	/// @param upperFreq Upper frequency bound
-	/// @param freqResolution Frequency resolution per FFT bin
-	/// @return Weighted average magnitude
-	static float calculateWeightedMagnitude(const FFTResult& fftResult, float lowerFreq, float upperFreq,
-	                                        float freqResolution);
-
-	/// Update peak tracking and draw peak indicator for equalizer bar
-	/// @param canvas The OLED canvas to render to
-	/// @param bar Bar index
-	/// @param normalizedHeight Current normalized height
-	/// @param barLeftX Left X coordinate of bar
-	/// @param barRightX Right X coordinate of bar
-	/// @param kGraphMinY Minimum Y coordinate of graph
-	/// @param kGraphMaxY Maximum Y coordinate of graph
-	/// @param kGraphHeight Graph height
-	/// @param visualizerMode Current visualizer mode
-	static void updateAndDrawPeak(oled_canvas::Canvas& canvas, int32_t bar, float normalizedHeight, int32_t barLeftX,
-	                              int32_t barRightX, int32_t kGraphMinY, int32_t kGraphMaxY, int32_t kGraphHeight,
-	                              uint32_t visualizerMode);
 
 	/// Whether visualizer display is enabled
 	static bool displayVisualizer;
