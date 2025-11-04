@@ -32,6 +32,9 @@ struct FFTResult {
 	ne10_fft_cpx_int32_t* output;
 	bool isValid;
 	bool isSilent;
+
+	FFTResult(ne10_fft_cpx_int32_t* output = nullptr, bool isValid = false, bool isSilent = false)
+	    : output(output), isValid(isValid), isSilent(isSilent) {}
 };
 
 // Shared constants

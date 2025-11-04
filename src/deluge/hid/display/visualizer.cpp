@@ -43,14 +43,14 @@ std::atomic<uint32_t> Visualizer::visualizerSampleCount{0};
 /// Render visualizer waveform or spectrum on OLED display
 void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
 	// Check visualizer mode
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 
-	if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
+	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
 		// Render spectrum using FFT
 		::deluge::hid::display::renderVisualizerSpectrum(canvas);
 		return;
 	}
-	else if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+	else if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 		// Render equalizer using FFT
 		::deluge::hid::display::renderVisualizerEqualizer(canvas);
 		return;
@@ -81,10 +81,10 @@ void Visualizer::renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
-bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizerEnabled,
+bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
                                              ModControllable* modControllable, int32_t modKnobMode) {
 	// Check if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode in runtime settings
-	if (visualizerEnabled) {
+	if (visualizer_enabled) {
 		// Re-enable visualizer if VU meter is enabled and feature is in an active mode (handles case where
 		// displayVisualizer was reset in focusRegained() but VU meter is still active)
 		if (displayVUMeter && modControllable && modKnobMode == 0) {
@@ -96,16 +96,16 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 		}
 	}
 	// If visualizer should be displayed but conditions aren't met, disable it
-	if (displayVisualizer && (!visualizerEnabled || !displayVUMeter || !modControllable || modKnobMode != 0)) {
+	if (displayVisualizer && (!visualizer_enabled || !displayVUMeter || !modControllable || modKnobMode != 0)) {
 		displayVisualizer = false;
 	}
 	return false;
 }
 
-void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizerEnabled,
+void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled,
                                                  ModControllable* modControllable, int32_t modKnobMode) {
 	// Check if visualizer should be active
-	if (visualizerEnabled && displayVUMeter && modControllable && modKnobMode == 0) {
+	if (visualizer_enabled && displayVUMeter && modControllable && modKnobMode == 0) {
 		// Enable visualizer if conditions are met
 		if (!displayVisualizer) {
 			displayVisualizer = true;
@@ -141,10 +141,10 @@ bool Visualizer::isEnabled() {
 void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderingBuffer, size_t numSamples) {
 	// Sample audio for visualizer visualization (downsample for efficiency)
 	// Only sample if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode to save CPU cycles
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform
-	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum
-	    || visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform
+	    || visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum
+	    || visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
 		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
 		constexpr uint32_t kVisualizerSampleInterval = 4;

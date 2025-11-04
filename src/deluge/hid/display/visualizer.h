@@ -59,7 +59,7 @@ public:
 	/// @param modControllable Current mod controllable
 	/// @param modKnobMode Current mod knob mode
 	/// @return true if visualizer was rendered
-	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizerEnabled,
+	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
 	                                        ModControllable* modControllable, int32_t modKnobMode);
 
 	/// Request OLED refresh for visualizer if active
@@ -67,7 +67,7 @@ public:
 	/// @param visualizerEnabled Whether visualizer feature is enabled
 	/// @param modControllable Current mod controllable
 	/// @param modKnobMode Current mod knob mode
-	static void requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizerEnabled,
+	static void requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled,
 	                                            ModControllable* modControllable, int32_t modKnobMode);
 
 	/// Reset visualizer state (called when switching views)

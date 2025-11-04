@@ -111,7 +111,7 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 
 	int32_t mod_knob_mode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
 		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
@@ -3090,7 +3090,7 @@ void ArrangerView::graphicsRoutine() {
 	if (currentUIMode == UI_MODE_NONE) {
 		int32_t modKnobMode = -1;
 		bool editingComp = false;
-		if (view.activeModControllableModelStack.modControllable) {
+		if (view.activeModControllableModelStack.modControllable != nullptr) {
 			uint8_t* modKnobModePointer = view.activeModControllableModelStack.modControllable->getModKnobMode();
 			if (modKnobModePointer) {
 				modKnobMode = *modKnobModePointer;
@@ -3119,7 +3119,7 @@ void ArrangerView::graphicsRoutine() {
 	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 
 	int32_t mod_knob_mode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
 		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 

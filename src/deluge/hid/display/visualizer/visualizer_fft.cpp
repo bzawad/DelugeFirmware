@@ -52,8 +52,13 @@ struct CachedFFTResult {
 	uint32_t lastWritePos; // Last buffer write position when FFT was computed
 	ne10_fft_cpx_int32_t cachedOutput[kSpectrumFFTOutputSize];
 	bool isValid;
+
+	CachedFFTResult(uint32_t lastWritePos = 0, bool isValid = false) : lastWritePos(lastWritePos), isValid(isValid) {
+		// Initialize cachedOutput array to zero
+		memset(cachedOutput, 0, sizeof(cachedOutput));
+	}
 };
-static CachedFFTResult cachedFFT = {0, {}, false};
+static CachedFFTResult cachedFFT{0, false};
 } // namespace
 
 // Initialize Hanning window coefficients (called once)
@@ -92,7 +97,7 @@ bool isFFTSilent(const ne10_fft_cpx_int32_t* fftOutput, int32_t threshold) {
 // Compute FFT for visualizer with caching optimization
 // Returns FFT output and validity flags
 FFTResult computeVisualizerFFT() {
-	FFTResult result = {nullptr, false, false};
+	FFTResult result{nullptr, false, false};
 
 	// Read sample count atomically (single read is safe)
 	uint32_t sampleCount = Visualizer::visualizerSampleCount.load(std::memory_order_acquire);

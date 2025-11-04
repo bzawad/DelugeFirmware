@@ -2223,10 +2223,10 @@ void SessionView::graphicsRoutine() {
 	}
 
 	// Request OLED refresh for visualizer if active (ensures continuous updates)
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	bool visualizerEnabled = (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-	                         || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 
 	int32_t modKnobMode = 0;
 	if (view.activeModControllableModelStack.modControllable) {
@@ -2234,7 +2234,7 @@ void SessionView::graphicsRoutine() {
 	}
 
 	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(
-	    view.displayVUMeter, visualizerEnabled, view.activeModControllableModelStack.modControllable, modKnobMode);
+	    view.displayVUMeter, visualizer_enabled, view.activeModControllableModelStack.modControllable, modKnobMode);
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);

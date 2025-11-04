@@ -1495,20 +1495,21 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 						// toggle displaying VU Meter and visualizer on / off
 						if (whichButton == 0) {
 							// Store previous state to determine if we need to refresh OLED when disabling
-							uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-							bool visualizerEnabled =
-							    (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-							    || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-							    || (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-							bool visualizerWasDisplayed =
-							    deluge::hid::display::Visualizer::isEnabled() && visualizerEnabled;
+							uint32_t visualizer_mode =
+							    runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+							bool visualizer_enabled =
+							    (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+							    || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+							    || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+							bool visualizer_was_displayed =
+							    deluge::hid::display::Visualizer::isEnabled() && visualizer_enabled;
 							displayVUMeter = !displayVUMeter;
 							// Visualizer follows VU meter toggle only if visualizer feature is enabled in an active
 							// mode
-							deluge::hid::display::Visualizer::setEnabled(displayVUMeter && visualizerEnabled);
+							deluge::hid::display::Visualizer::setEnabled(displayVUMeter && visualizer_enabled);
 							// Refresh OLED if visualizer was previously displayed (need to show normal view when
 							// disabling)
-							if (visualizerWasDisplayed) {
+							if (visualizer_was_displayed) {
 								renderUIsForOled();
 							}
 						}
@@ -1806,8 +1807,8 @@ bool View::potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]) 
 	if (!displayVUMeter && deluge::hid::display::Visualizer::isEnabled()) {
 		deluge::hid::display::Visualizer::setEnabled(false);
 		// Trigger OLED refresh to clear visualizer and show normal view
-		RootUI* rootUI = getRootUI();
-		if (rootUI && !rootUIIsClipMinderScreen()) {
+		RootUI* root_ui = getRootUI();
+		if (root_ui != nullptr && !rootUIIsClipMinderScreen()) {
 			renderUIsForOled();
 		}
 	}
