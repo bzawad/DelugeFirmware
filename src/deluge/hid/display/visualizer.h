@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "dsp/fft/fft_config_manager.h"
 #include "dsp_ng/core/types.hpp"
+#include "gui/views/view.h"
 #include "hid/display/visualizer/visualizer_common.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "oled.h"
@@ -54,6 +55,12 @@ public:
 
 	/// Check if visualizer should be rendered and render it if conditions are met
 	/// @param canvas The OLED canvas to render to
+	/// @param view The current view containing VU meter and mod controllable state
+	/// @return true if visualizer was rendered
+	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View* view);
+
+	/// Check if visualizer should be rendered and render it if conditions are met
+	/// @param canvas The OLED canvas to render to
 	/// @param displayVUMeter Whether VU meter is enabled
 	/// @param visualizerEnabled Whether visualizer feature is enabled
 	/// @param modControllable Current mod controllable
@@ -61,6 +68,10 @@ public:
 	/// @return true if visualizer was rendered
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
 	                                        ModControllable* modControllable, int32_t modKnobMode);
+
+	/// Request OLED refresh for visualizer if active
+	/// @param view The current view containing VU meter and mod controllable state
+	static void requestVisualizerUpdateIfNeeded(View* view);
 
 	/// Request OLED refresh for visualizer if active
 	/// @param displayVUMeter Whether VU meter is enabled
@@ -84,6 +95,11 @@ public:
 	/// Get whether visualizer feature is enabled in runtime settings
 	/// @return true if visualizer is set to Waveform, Spectrum, or Equalizer mode
 	static bool isEnabled();
+
+	/// Get whether visualizer is active (feature enabled AND display conditions met)
+	/// @param view The current view containing VU meter and mod controllable state
+	/// @return true if visualizer is actively running
+	static bool isActive(View* view);
 
 	/// Get whether visualizer is active (feature enabled AND display conditions met)
 	/// @param displayVUMeter Whether VU meter is enabled

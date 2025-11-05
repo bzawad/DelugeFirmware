@@ -105,14 +105,7 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	int32_t mod_knob_mode = 0;
-	if (view.activeModControllableModelStack.modControllable != nullptr) {
-		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
-	}
-
-	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(
-	        canvas, view.displayVUMeter, deluge::hid::display::Visualizer::isEnabled(),
-	        view.activeModControllableModelStack.modControllable, mod_knob_mode)) {
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas, &view)) {
 		// Visualizer was rendered, skip normal rendering
 		return;
 	}
@@ -3108,14 +3101,7 @@ void ArrangerView::graphicsRoutine() {
 	}
 
 	// Request OLED refresh for visualizer if active (ensures continuous updates)
-	int32_t mod_knob_mode = 0;
-	if (view.activeModControllableModelStack.modControllable != nullptr) {
-		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
-	}
-
-	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(
-	    view.displayVUMeter, deluge::hid::display::Visualizer::isEnabled(),
-	    view.activeModControllableModelStack.modControllable, mod_knob_mode);
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(&view);
 
 	if (display->haveOLED()) {
 		sessionView.displayPotentialTempoChange(this);
