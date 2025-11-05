@@ -239,11 +239,11 @@ void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderin
 				int32_t sampleR = renderingBuffer[midSample].r >> kQ31ToQ15Shift;
 				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
 
-				// Write to circular buffer (thread-safe for single writer, single reader)
-				uint32_t writePos = visualizerWritePos.load(std::memory_order_relaxed);
+				// Write to circular buffer (thread-safe for single writer, multiple readers)
+				uint32_t writePos = visualizerWritePos.load(std::memory_order_acquire);
 				visualizerSampleBuffer[writePos] = combined;
 				visualizerWritePos.store((writePos + 1) % kVisualizerBufferSize, std::memory_order_release);
-				if (visualizerSampleCount.load(std::memory_order_relaxed) < kVisualizerBufferSize) {
+				if (visualizerSampleCount.load(std::memory_order_acquire) < kVisualizerBufferSize) {
 					visualizerSampleCount.fetch_add(1, std::memory_order_release);
 				}
 			}
