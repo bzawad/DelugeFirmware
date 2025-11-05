@@ -34,6 +34,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -75,6 +76,8 @@
 #include "util/functions.h"
 #include <math.h>
 #include <new>
+
+using deluge::hid::display::Visualizer;
 
 extern "C" {
 #include "RZA1/gpio/gpio.h"
@@ -2327,19 +2330,11 @@ void PlaybackHandler::displayTempoBPM(float tempoBPM) {
 		bool isSessionOrArranger = (currentUI == &sessionView || currentUI == &arrangerView);
 
 		// Check if visualizer is enabled AND actively running
-		uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-		bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-		                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-		                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-		bool visualizer_active = false;
-		if (visualizer_enabled) {
-			// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-			bool vu_meter_enabled = view.displayVUMeter;
-			ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-			bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-			visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-		}
+		bool visualizer_active = deluge::hid::display::Visualizer::isActive(
+		    view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+		    view.activeModControllableModelStack.modControllable
+		        ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+		        : 0);
 
 		if (isSessionOrArranger && !deluge::hid::display::OLED::isPermanentPopupPresent() && !visualizer_active) {
 			// Direct canvas rendering (original behavior when visualizer not actively running)

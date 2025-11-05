@@ -77,9 +77,24 @@ public:
 	/// @param enabled Whether visualizer should be enabled
 	static void setEnabled(bool enabled);
 
-	/// Get whether visualizer display is enabled
-	/// @return true if visualizer display is enabled
+	/// Get whether visualizer is currently displaying
+	/// @return true if visualizer display is active
+	static bool isDisplaying();
+
+	/// Get whether visualizer feature is enabled in runtime settings
+	/// @return true if visualizer is set to Waveform, Spectrum, or Equalizer mode
 	static bool isEnabled();
+
+	/// Get whether visualizer is active (feature enabled AND display conditions met)
+	/// @param displayVUMeter Whether VU meter is enabled
+	/// @param modControllable Current mod controllable
+	/// @param modKnobMode Current mod knob mode
+	/// @return true if visualizer is actively running
+	static bool isActive(bool displayVUMeter, ModControllable* modControllable, int32_t modKnobMode);
+
+	/// Get current visualizer mode from runtime settings
+	/// @return Current visualizer mode
+	static uint32_t getMode();
 
 	/// Sample audio data for visualizer display (waveform, spectrum, equalizer)
 	/// Performs downsampling and stores samples in the circular buffer for display

@@ -1495,14 +1495,9 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 						// toggle displaying VU Meter and visualizer on / off
 						if (whichButton == 0) {
 							// Store previous state to determine if we need to refresh OLED when disabling
-							uint32_t visualizer_mode =
-							    runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-							bool visualizer_enabled =
-							    (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-							    || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-							    || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+							bool visualizer_enabled = deluge::hid::display::Visualizer::isEnabled();
 							bool visualizer_was_displayed =
-							    deluge::hid::display::Visualizer::isEnabled() && visualizer_enabled;
+							    deluge::hid::display::Visualizer::isDisplaying() && visualizer_enabled;
 							displayVUMeter = !displayVUMeter;
 							// Visualizer follows VU meter toggle only if visualizer feature is enabled in an active
 							// mode
@@ -1519,7 +1514,7 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 						uiNeedsRendering(rootUI, 0); // only render sidebar
 					}
 					// refresh OLED if visualizer is now displayed (when enabling)
-					if (deluge::hid::display::Visualizer::isEnabled()) {
+					if (deluge::hid::display::Visualizer::isDisplaying()) {
 						renderUIsForOled();
 					}
 				}
@@ -1804,7 +1799,7 @@ bool View::potentiallyRenderVUMeter(RGB image[][kDisplayWidth + kSideBarWidth]) 
 	// if we made it here then we haven't rendered a VU meter in the sidebar
 	renderedVUMeter = false;
 	// Also disable visualizer when VU meter is not being rendered
-	if (!displayVUMeter && deluge::hid::display::Visualizer::isEnabled()) {
+	if (!displayVUMeter && deluge::hid::display::Visualizer::isDisplaying()) {
 		deluge::hid::display::Visualizer::setEnabled(false);
 		// Trigger OLED refresh to clear visualizer and show normal view
 		RootUI* root_ui = getRootUI();

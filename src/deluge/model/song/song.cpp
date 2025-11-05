@@ -29,6 +29,7 @@
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -71,6 +72,8 @@
 extern "C" {}
 
 namespace params = deluge::modulation::params;
+
+using deluge::hid::display::Visualizer;
 
 /// Do not call in static/global constructors, song won't exist yet
 Clip* getCurrentClip() {
@@ -5763,19 +5766,11 @@ void Song::displayCurrentRootNoteAndScaleName() {
 		bool isSessionView = (currentUI == &sessionView || currentUI == &arrangerView);
 
 		// Check if visualizer is enabled AND actively running
-		uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-		bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-		                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-		                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-		bool visualizer_active = false;
-		if (visualizer_enabled) {
-			// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-			bool vu_meter_enabled = view.displayVUMeter;
-			ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-			bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-			visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-		}
+		bool visualizer_active = deluge::hid::display::Visualizer::isActive(
+		    view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+		    view.activeModControllableModelStack.modControllable
+		        ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+		        : 0);
 
 		// only display pop-up if we're using 7SEG or we're not currently in Song / Arranger View
 		// OR if visualizer is actively running (to prevent conflicts)

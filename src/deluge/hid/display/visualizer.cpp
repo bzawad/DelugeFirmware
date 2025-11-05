@@ -43,7 +43,7 @@ std::atomic<uint32_t> Visualizer::visualizerSampleCount{0};
 /// Render visualizer waveform or spectrum on OLED display
 void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
 	// Check visualizer mode
-	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	uint32_t visualizer_mode = getMode();
 
 	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
 		// Render spectrum using FFT
@@ -134,17 +134,29 @@ void Visualizer::setEnabled(bool enabled) {
 	displayVisualizer = enabled;
 }
 
-bool Visualizer::isEnabled() {
+bool Visualizer::isDisplaying() {
 	return displayVisualizer;
+}
+
+bool Visualizer::isEnabled() {
+	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	return (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
+	       || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
+	       || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+}
+
+bool Visualizer::isActive(bool displayVUMeter, ModControllable* modControllable, int32_t modKnobMode) {
+	return isEnabled() && displayVUMeter && modControllable && modKnobMode == 0;
+}
+
+uint32_t Visualizer::getMode() {
+	return runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 }
 
 void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderingBuffer, size_t numSamples) {
 	// Sample audio for visualizer visualization (downsample for efficiency)
 	// Only sample if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode to save CPU cycles
-	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform
-	    || visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum
-	    || visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+	if (isEnabled()) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
 		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
 		constexpr uint32_t kVisualizerSampleInterval = 4;

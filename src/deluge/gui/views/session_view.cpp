@@ -1902,10 +1902,7 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+	bool visualizer_enabled = deluge::hid::display::Visualizer::isEnabled();
 
 	int32_t mod_knob_mode = 0;
 	if (view.activeModControllableModelStack.modControllable) {
@@ -1934,19 +1931,11 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 				intToString(session.numRepeatsTilLaunch, &loopsRemainingText[17]);
 
 				// Check if visualizer is enabled AND actively running
-				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-				bool visualizer_active = false;
-				if (visualizer_enabled) {
-					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-					bool vu_meter_enabled = view.displayVUMeter;
-					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-					visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-				}
+				bool visualizer_active = deluge::hid::display::Visualizer::isActive(
+				    view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+				    view.activeModControllableModelStack.modControllable
+				        ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+				        : 0);
 
 				if (visualizer_active) {
 					// Use popup for active visualizer users
@@ -1962,22 +1951,13 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 			}
 			else {
 				// Check if visualizer is active - if so, cancel any lingering popup when launch event ends
-				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-				if (visualizer_enabled) {
-					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-					bool vu_meter_enabled = view.displayVUMeter;
-					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-					bool visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-
-					if (visualizer_active) {
-						// Cancel any lingering popup when the launch event countdown reaches zero
-						display->cancelPopup();
-					}
+				if (deluge::hid::display::Visualizer::isActive(
+				        view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+				        view.activeModControllableModelStack.modControllable
+				            ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+				            : 0)) {
+					// Cancel any lingering popup when the launch event countdown reaches zero
+					display->cancelPopup();
 				}
 			}
 		}
@@ -1985,21 +1965,11 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		else { // Arrangement playback
 			if (playbackHandler.stopOutputRecordingAtLoopEnd) {
 				// Check if visualizer is enabled AND actively running
-				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-				bool visualizer_active = false;
-				if (visualizer_enabled) {
-					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-					bool vu_meter_enabled = view.displayVUMeter;
-					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-					visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-				}
-
-				if (visualizer_active) {
+				if (deluge::hid::display::Visualizer::isActive(
+				        view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+				        view.activeModControllableModelStack.modControllable
+				            ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+				            : 0)) {
 					// Use popup for active visualizer users
 					display->popupText("Resampling will end...", PopupType::GENERAL);
 				}
@@ -2013,22 +1983,13 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 			}
 			else {
 				// Check if visualizer is active - if so, cancel any lingering popup when resampling ends
-				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-				if (visualizer_enabled) {
-					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-					bool vu_meter_enabled = view.displayVUMeter;
-					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-					bool visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-
-					if (visualizer_active) {
-						// Cancel any lingering popup when the resampling notification ends
-						display->cancelPopup();
-					}
+				if (deluge::hid::display::Visualizer::isActive(
+				        view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+				        view.activeModControllableModelStack.modControllable
+				            ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+				            : 0)) {
+					// Cancel any lingering popup when the resampling notification ends
+					display->cancelPopup();
 				}
 			}
 		}
@@ -2312,18 +2273,14 @@ void SessionView::graphicsRoutine() {
 	}
 
 	// Request OLED refresh for visualizer if active (ensures continuous updates)
-	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-	bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-	                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
 	int32_t modKnobMode = 0;
 	if (view.activeModControllableModelStack.modControllable) {
 		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
 	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(
-	    view.displayVUMeter, visualizer_enabled, view.activeModControllableModelStack.modControllable, modKnobMode);
+	    view.displayVUMeter, deluge::hid::display::Visualizer::isEnabled(),
+	    view.activeModControllableModelStack.modControllable, modKnobMode);
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);
@@ -2513,21 +2470,11 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 			}
 			if (display->haveOLED() && !ephemeral) {
 				// Check if visualizer is enabled AND actively running
-				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-				bool visualizer_active = false;
-				if (visualizer_enabled) {
-					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-					bool vu_meter_enabled = view.displayVUMeter;
-					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-					visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-				}
-
-				if (visualizer_active) {
+				if (deluge::hid::display::Visualizer::isActive(
+				        view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+				        view.activeModControllableModelStack.modControllable
+				            ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+				            : 0)) {
 					// Use popup for active visualizer users
 					display->popupText(popupMsg.c_str(), PopupType::GENERAL);
 				}
@@ -2548,22 +2495,13 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 			// If no popup was shown (sixteenthNotesRemaining <= 0), but visualizer is active,
 			// cancel any lingering popup from previous calls
 			if (display->haveOLED() && !ephemeral) {
-				uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
-				bool visualizer_enabled = (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-				                          || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
-
-				if (visualizer_enabled) {
-					// Check additional conditions for active visualizer (same as potentiallyRenderVisualizer)
-					bool vu_meter_enabled = view.displayVUMeter;
-					ModControllable* mod_controllable = view.activeModControllableModelStack.modControllable;
-					bool mod_knob_in_level_mode = mod_controllable && (*mod_controllable->getModKnobMode() == 0);
-					bool visualizer_active = vu_meter_enabled && mod_controllable && mod_knob_in_level_mode;
-
-					if (visualizer_active) {
-						// Cancel any lingering popup when the countdown reaches zero
-						display->cancelPopup();
-					}
+				if (deluge::hid::display::Visualizer::isActive(
+				        view.displayVUMeter, view.activeModControllableModelStack.modControllable,
+				        view.activeModControllableModelStack.modControllable
+				            ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
+				            : 0)) {
+					// Cancel any lingering popup when the countdown reaches zero
+					display->cancelPopup();
 				}
 			}
 		}
