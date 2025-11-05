@@ -55,6 +55,11 @@ public:
 
 	/// Check if visualizer should be rendered and render it if conditions are met
 	/// @param canvas The OLED canvas to render to
+	/// @return true if visualizer was rendered
+	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas);
+
+	/// Check if visualizer should be rendered and render it if conditions are met
+	/// @param canvas The OLED canvas to render to
 	/// @param view The current view containing VU meter and mod controllable state
 	/// @return true if visualizer was rendered
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& view);
@@ -68,6 +73,9 @@ public:
 	/// @return true if visualizer was rendered
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
 	                                        ModControllable* modControllable, int32_t modKnobMode);
+
+	/// Request OLED refresh for visualizer if active
+	static void requestVisualizerUpdateIfNeeded();
 
 	/// Request OLED refresh for visualizer if active
 	/// @param view The current view containing VU meter and mod controllable state
@@ -95,6 +103,10 @@ public:
 	/// Get whether visualizer feature is enabled in runtime settings
 	/// @return true if visualizer is set to Waveform, Spectrum, or Equalizer mode
 	static bool isEnabled();
+
+	/// Get whether visualizer is active (feature enabled AND display conditions met)
+	/// @return true if visualizer is actively running
+	static bool isActive();
 
 	/// Get whether visualizer is active (feature enabled AND display conditions met)
 	/// @param view The current view containing VU meter and mod controllable state
