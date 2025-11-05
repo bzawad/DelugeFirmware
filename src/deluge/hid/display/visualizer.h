@@ -57,7 +57,7 @@ public:
 	/// @param canvas The OLED canvas to render to
 	/// @param view The current view containing VU meter and mod controllable state
 	/// @return true if visualizer was rendered
-	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View* view);
+	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& view);
 
 	/// Check if visualizer should be rendered and render it if conditions are met
 	/// @param canvas The OLED canvas to render to
@@ -71,7 +71,7 @@ public:
 
 	/// Request OLED refresh for visualizer if active
 	/// @param view The current view containing VU meter and mod controllable state
-	static void requestVisualizerUpdateIfNeeded(View* view);
+	static void requestVisualizerUpdateIfNeeded(View& view);
 
 	/// Request OLED refresh for visualizer if active
 	/// @param displayVUMeter Whether VU meter is enabled
@@ -99,7 +99,7 @@ public:
 	/// Get whether visualizer is active (feature enabled AND display conditions met)
 	/// @param view The current view containing VU meter and mod controllable state
 	/// @return true if visualizer is actively running
-	static bool isActive(View* view);
+	static bool isActive(View& view);
 
 	/// Get whether visualizer is active (feature enabled AND display conditions met)
 	/// @param displayVUMeter Whether VU meter is enabled

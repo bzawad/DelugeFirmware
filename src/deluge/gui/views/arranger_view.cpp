@@ -105,7 +105,7 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 	}
 
 	// Check if visualizer should be displayed (same conditions as VU meter)
-	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas, &view)) {
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas, view)) {
 		// Visualizer was rendered, skip normal rendering
 		return;
 	}
@@ -3101,7 +3101,7 @@ void ArrangerView::graphicsRoutine() {
 	}
 
 	// Request OLED refresh for visualizer if active (ensures continuous updates)
-	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(&view);
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded(view);
 
 	if (display->haveOLED()) {
 		sessionView.displayPotentialTempoChange(this);
