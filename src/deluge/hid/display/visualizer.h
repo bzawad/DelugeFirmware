@@ -132,7 +132,7 @@ public:
 	static void sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderingBuffer, size_t numSamples);
 
 	/// Whether visualizer display is enabled
-	static bool displayVisualizer;
+	static bool display_visualizer;
 
 	/// Frame counter for update timing
 	static uint32_t visualizerFrameCounter;

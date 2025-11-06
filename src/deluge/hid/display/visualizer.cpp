@@ -30,7 +30,7 @@
 namespace deluge::hid::display {
 
 // Static member variables
-bool Visualizer::displayVisualizer = false;
+bool Visualizer::display_visualizer = false;
 uint32_t Visualizer::visualizerFrameCounter = 0;
 
 // Visualizer sample buffer initialization
@@ -55,7 +55,6 @@ void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
 	}
 	// Default to waveform rendering (for VisualizerWaveform)
 	::deluge::hid::display::renderVisualizerWaveform(canvas);
-	return;
 }
 
 /// Render waveform visualization
@@ -104,19 +103,19 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 	// Check if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode in runtime settings
 	if (visualizer_enabled) {
 		// Re-enable visualizer if VU meter is enabled and feature is in an active mode (handles case where
-		// displayVisualizer was reset in focusRegained() but VU meter is still active)
+		// display_visualizer was reset in focusRegained() but VU meter is still active)
 		if (displayVUMeter && modControllable != nullptr && mod_knob_mode == 0) {
-			if (!displayVisualizer) {
-				displayVisualizer = true;
+			if (!display_visualizer) {
+				display_visualizer = true;
 			}
 			renderVisualizer(canvas);
 			return true;
 		}
 	}
 	// If visualizer should be displayed but conditions aren't met, disable it
-	if (displayVisualizer
+	if (display_visualizer
 	    && (!visualizer_enabled || !displayVUMeter || modControllable == nullptr || mod_knob_mode != 0)) {
-		displayVisualizer = false;
+		display_visualizer = false;
 	}
 	return false;
 }
@@ -148,8 +147,8 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 	// Check if visualizer should be active
 	if (visualizer_enabled && displayVUMeter && modControllable != nullptr && mod_knob_mode == 0) {
 		// Enable visualizer if conditions are met
-		if (!displayVisualizer) {
-			displayVisualizer = true;
+		if (!display_visualizer) {
+			display_visualizer = true;
 		}
 		// Request OLED update for visualizer at reduced frame rate to prevent excessive CPU usage
 		// Update every 2 frames (~30fps instead of ~60fps) for better performance
@@ -161,22 +160,22 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 		return;
 	}
 	// Disable visualizer if conditions aren't met
-	if (displayVisualizer) {
-		displayVisualizer = false;
+	if (display_visualizer) {
+		display_visualizer = false;
 	}
 }
 
 void Visualizer::reset() {
-	displayVisualizer = false;
+	display_visualizer = false;
 	visualizerFrameCounter = 0;
 }
 
 void Visualizer::setEnabled(bool enabled) {
-	displayVisualizer = enabled;
+	display_visualizer = enabled;
 }
 
 bool Visualizer::isDisplaying() {
-	return displayVisualizer;
+	return display_visualizer;
 }
 
 bool Visualizer::isEnabled() {
@@ -220,25 +219,25 @@ void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderin
 	if (isEnabled()) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
 		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
-		constexpr uint32_t kVisualizerSampleInterval = 4;
+		constexpr uint32_t visualizer_sample_interval = 4;
 		// Q31 to Q15 conversion: shift right by 16 bits (31-15 = 16)
-		constexpr uint32_t kQ31ToQ15Shift = 16;
-		static uint32_t sampleCounter = 0;
-		sampleCounter++;
-		if (sampleCounter >= kVisualizerSampleInterval) {
-			sampleCounter = 0;
+		constexpr uint32_t q31_to_q15_shift = 16;
+		static uint32_t sample_counter = 0;
+		sample_counter++;
+		if (sample_counter >= visualizer_sample_interval) {
+			sample_counter = 0;
 			// Take a sample from the middle of the buffer for better representation
-			size_t midSample = numSamples / 2;
-			if (midSample < renderingBuffer.size()) {
+			size_t mid_sample = numSamples / 2;
+			if (mid_sample < renderingBuffer.size()) {
 				// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
-				int32_t sampleL = renderingBuffer[midSample].l >> kQ31ToQ15Shift; // Convert Q31 to Q15 range
-				int32_t sampleR = renderingBuffer[midSample].r >> kQ31ToQ15Shift;
-				int32_t combined = (sampleL + sampleR) >> 1; // Average of L and R
+				int32_t sample_l = renderingBuffer[mid_sample].l >> q31_to_q15_shift; // Convert Q31 to Q15 range
+				int32_t sample_r = renderingBuffer[mid_sample].r >> q31_to_q15_shift;
+				int32_t combined = (sample_l + sample_r) >> 1; // Average of L and R
 
 				// Write to circular buffer (thread-safe for single writer, multiple readers)
-				uint32_t writePos = visualizerWritePos.load(std::memory_order_acquire);
-				visualizerSampleBuffer[writePos] = combined;
-				visualizerWritePos.store((writePos + 1) % kVisualizerBufferSize, std::memory_order_release);
+				uint32_t write_pos = visualizerWritePos.load(std::memory_order_acquire);
+				visualizerSampleBuffer[write_pos] = combined;
+				visualizerWritePos.store((write_pos + 1) % kVisualizerBufferSize, std::memory_order_release);
 				if (visualizerSampleCount.load(std::memory_order_acquire) < kVisualizerBufferSize) {
 					visualizerSampleCount.fetch_add(1, std::memory_order_release);
 				}
