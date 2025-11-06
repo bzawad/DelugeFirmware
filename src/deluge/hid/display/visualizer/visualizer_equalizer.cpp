@@ -18,6 +18,7 @@
 #include "visualizer_equalizer.h"
 #include "hid/display/oled.h"
 #include "hid/display/oled_canvas/canvas.h"
+#include "hid/display/visualizer.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "visualizer_common.h"
 #include "visualizer_fft.h"
@@ -81,9 +82,9 @@ void calculateFrequencyBandRange(int32_t bar, float& lowerFreq, float& upperFreq
 // Update peak tracking and draw peak indicator for equalizer bar
 void updateAndDrawPeak(oled_canvas::Canvas& canvas, int32_t bar, float normalizedHeight, int32_t barLeftX,
                        int32_t barRightX, int32_t kGraphMinY, int32_t kGraphMaxY, int32_t kGraphHeight,
-                       uint32_t visualizerMode) {
+                       uint32_t visualizer_mode) {
 	// Only use peak tracking arrays when in equalizer mode (conditional memory usage)
-	if (visualizerMode != RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+	if (visualizer_mode != RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 		return;
 	}
 
@@ -135,7 +136,7 @@ void updateAndDrawPeak(oled_canvas::Canvas& canvas, int32_t bar, float normalize
 /// 5. Track peak heights with squared decay for visual feedback
 void renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 	// Cache visualizer mode to avoid redundant runtime feature settings queries
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	uint32_t visualizer_mode = deluge::hid::display::Visualizer::getMode();
 
 	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
 	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
@@ -206,7 +207,7 @@ void renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 
 		// Apply smoothing filter for stability (first-order IIR: smoothed = alpha*old + beta*new)
 		// Only use smoothing buffer when in equalizer mode (conditional memory usage)
-		if (visualizerMode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+		if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 			equalizerSmoothedValues[bar] =
 			    equalizerSmoothedValues[bar] * kSmoothingAlpha + display_value * kSmoothingBeta;
 			display_value = equalizerSmoothedValues[bar];
@@ -240,7 +241,7 @@ void renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 		// Update peak tracking and draw peak indicator
 		float normalizedHeight = static_cast<float>(scaledHeight) / static_cast<float>(kGraphHeight);
 		updateAndDrawPeak(canvas, bar, normalizedHeight, barLeftX, barRightX, kGraphMinY, kGraphMaxY, kGraphHeight,
-		                  visualizerMode);
+		                  visualizer_mode);
 	}
 
 	// Mark OLED as changed so it gets sent to display

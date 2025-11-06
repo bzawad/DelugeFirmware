@@ -2329,14 +2329,8 @@ void PlaybackHandler::displayTempoBPM(float tempoBPM) {
 		UI* currentUI = getCurrentUI();
 		bool isSessionOrArranger = (currentUI == &sessionView || currentUI == &arrangerView);
 
-		// Check if visualizer is enabled AND actively running
-		bool visualizer_active = deluge::hid::display::Visualizer::isActive(
-		    view.displayVUMeter, view.activeModControllableModelStack.modControllable,
-		    view.activeModControllableModelStack.modControllable
-		        ? *view.activeModControllableModelStack.modControllable->getModKnobMode()
-		        : 0);
-
-		if (isSessionOrArranger && !deluge::hid::display::OLED::isPermanentPopupPresent() && !visualizer_active) {
+		if (isSessionOrArranger && !deluge::hid::display::OLED::isPermanentPopupPresent()
+		    && !deluge::hid::display::Visualizer::isActive()) {
 			// Direct canvas rendering (original behavior when visualizer not actively running)
 			sessionView.lastDisplayedTempo = tempoBPM;
 			getTempoStringForOLED(tempoBPM, text);

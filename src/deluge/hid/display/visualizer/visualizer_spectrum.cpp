@@ -18,6 +18,7 @@
 #include "visualizer_spectrum.h"
 #include "hid/display/oled.h"
 #include "hid/display/oled_canvas/canvas.h"
+#include "hid/display/visualizer.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "util/functions.h"
 #include "visualizer_common.h"
@@ -44,7 +45,7 @@ float spectrumSmoothedValues[kMaxSpectrumPixels] = {0.0f};
 /// Render visualizer spectrum on OLED display using FFT
 void renderVisualizerSpectrum(oled_canvas::Canvas& canvas) {
 	// Cache visualizer mode to avoid redundant runtime feature settings queries
-	uint32_t visualizerMode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+	uint32_t visualizer_mode = deluge::hid::display::Visualizer::getMode();
 
 	constexpr int32_t kDisplayWidth = OLED_MAIN_WIDTH_PIXELS;
 	constexpr int32_t kDisplayHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
@@ -141,7 +142,7 @@ void renderVisualizerSpectrum(oled_canvas::Canvas& canvas) {
 		// Use per-pixel smoothing instead of per-bin to avoid conflicts when multiple pixels map to same bin
 		// This prevents stepping artifacts, especially at low frequencies after compression
 		// Only use smoothing buffer when in spectrum mode (conditional memory usage)
-		if (pixel < kMaxSpectrumPixels && visualizerMode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
+		if (pixel < kMaxSpectrumPixels && visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
 			spectrumSmoothedValues[pixel] =
 			    spectrumSmoothedValues[pixel] * kSmoothingAlpha + display_value * kSmoothingBeta;
 			display_value = spectrumSmoothedValues[pixel];
