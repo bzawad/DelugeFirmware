@@ -26,6 +26,7 @@
 #include "oled.h"
 #include "oled_canvas/canvas.h"
 #include "processing/engines/audio_engine.h"
+#include <array>
 #include <atomic>
 
 // Forward declarations
@@ -69,10 +70,10 @@ public:
 	/// @param displayVUMeter Whether VU meter is enabled
 	/// @param visualizerEnabled Whether visualizer feature is enabled
 	/// @param modControllable Current mod controllable
-	/// @param modKnobMode Current mod knob mode
+	/// @param mod_knob_mode Current mod knob mode
 	/// @return true if visualizer was rendered
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
-	                                        ModControllable* modControllable, int32_t modKnobMode);
+	                                        ModControllable* modControllable, int32_t mod_knob_mode);
 
 	/// Request OLED refresh for visualizer if active
 	static void requestVisualizerUpdateIfNeeded();
@@ -85,9 +86,9 @@ public:
 	/// @param displayVUMeter Whether VU meter is enabled
 	/// @param visualizerEnabled Whether visualizer feature is enabled
 	/// @param modControllable Current mod controllable
-	/// @param modKnobMode Current mod knob mode
+	/// @param mod_knob_mode Current mod knob mode
 	static void requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled,
-	                                            ModControllable* modControllable, int32_t modKnobMode);
+	                                            ModControllable* modControllable, int32_t mod_knob_mode);
 
 	/// Reset visualizer state (called when switching views)
 	static void reset();
@@ -116,9 +117,9 @@ public:
 	/// Get whether visualizer is active (feature enabled AND display conditions met)
 	/// @param displayVUMeter Whether VU meter is enabled
 	/// @param modControllable Current mod controllable
-	/// @param modKnobMode Current mod knob mode
+	/// @param mod_knob_mode Current mod knob mode
 	/// @return true if visualizer is actively running
-	static bool isActive(bool displayVUMeter, ModControllable* modControllable, int32_t modKnobMode);
+	static bool isActive(bool displayVUMeter, ModControllable* modControllable, int32_t mod_knob_mode);
 
 	/// Get current visualizer mode from runtime settings
 	/// @return Current visualizer mode
@@ -138,7 +139,7 @@ public:
 
 	/// Visualizer sample buffer and related variables
 	static constexpr size_t kVisualizerBufferSize = 256;
-	static int32_t visualizerSampleBuffer[kVisualizerBufferSize];
+	static std::array<int32_t, kVisualizerBufferSize> visualizerSampleBuffer;
 	static std::atomic<uint32_t> visualizerWritePos;
 	static std::atomic<uint32_t> visualizerSampleCount;
 };

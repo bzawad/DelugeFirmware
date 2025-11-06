@@ -27,9 +27,6 @@
 #include "modulation/params/param.h"
 #include <atomic>
 
-// Forward declaration for global UI rendering function
-extern void renderUIsForOled();
-
 namespace deluge::hid::display {
 
 // Static member variables
@@ -37,7 +34,7 @@ bool Visualizer::displayVisualizer = false;
 uint32_t Visualizer::visualizerFrameCounter = 0;
 
 // Visualizer sample buffer initialization
-alignas(CACHE_LINE_SIZE) int32_t Visualizer::visualizerSampleBuffer[kVisualizerBufferSize]{};
+alignas(CACHE_LINE_SIZE) std::array<int32_t, Visualizer::kVisualizerBufferSize> Visualizer::visualizerSampleBuffer{};
 std::atomic<uint32_t> Visualizer::visualizerWritePos{0};
 std::atomic<uint32_t> Visualizer::visualizerSampleCount{0};
 
@@ -51,16 +48,14 @@ void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
 		::deluge::hid::display::renderVisualizerSpectrum(canvas);
 		return;
 	}
-	else if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 		// Render equalizer using FFT
 		::deluge::hid::display::renderVisualizerEqualizer(canvas);
 		return;
 	}
-	else {
-		// Default to waveform rendering (for VisualizerWaveform)
-		::deluge::hid::display::renderVisualizerWaveform(canvas);
-		return;
-	}
+	// Default to waveform rendering (for VisualizerWaveform)
+	::deluge::hid::display::renderVisualizerWaveform(canvas);
+	return;
 }
 
 /// Render waveform visualization
@@ -83,34 +78,34 @@ void Visualizer::renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 
 /// Check if visualizer should be rendered and render it if conditions are met
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas) {
-	int32_t modKnobMode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	int32_t mod_knob_mode = 0;
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
 	return potentiallyRenderVisualizer(canvas, view.displayVUMeter, isEnabled(),
-	                                   view.activeModControllableModelStack.modControllable, modKnobMode);
+	                                   view.activeModControllableModelStack.modControllable, mod_knob_mode);
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& view) {
-	int32_t modKnobMode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	int32_t mod_knob_mode = 0;
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
 	return potentiallyRenderVisualizer(canvas, view.displayVUMeter, isEnabled(),
-	                                   view.activeModControllableModelStack.modControllable, modKnobMode);
+	                                   view.activeModControllableModelStack.modControllable, mod_knob_mode);
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
-                                             ModControllable* modControllable, int32_t modKnobMode) {
+                                             ModControllable* modControllable, int32_t mod_knob_mode) {
 	// Check if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode in runtime settings
 	if (visualizer_enabled) {
 		// Re-enable visualizer if VU meter is enabled and feature is in an active mode (handles case where
 		// displayVisualizer was reset in focusRegained() but VU meter is still active)
-		if (displayVUMeter && modControllable && modKnobMode == 0) {
+		if (displayVUMeter && modControllable != nullptr && mod_knob_mode == 0) {
 			if (!displayVisualizer) {
 				displayVisualizer = true;
 			}
@@ -119,7 +114,8 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 		}
 	}
 	// If visualizer should be displayed but conditions aren't met, disable it
-	if (displayVisualizer && (!visualizer_enabled || !displayVUMeter || !modControllable || modKnobMode != 0)) {
+	if (displayVisualizer
+	    && (!visualizer_enabled || !displayVUMeter || modControllable == nullptr || mod_knob_mode != 0)) {
 		displayVisualizer = false;
 	}
 	return false;
@@ -127,30 +123,30 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 
 /// Request OLED refresh for visualizer if active
 void Visualizer::requestVisualizerUpdateIfNeeded() {
-	int32_t modKnobMode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	int32_t mod_knob_mode = 0;
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
 	requestVisualizerUpdateIfNeeded(view.displayVUMeter, isEnabled(),
-	                                view.activeModControllableModelStack.modControllable, modKnobMode);
+	                                view.activeModControllableModelStack.modControllable, mod_knob_mode);
 }
 
 /// Request OLED refresh for visualizer if active
 void Visualizer::requestVisualizerUpdateIfNeeded(View& view) {
-	int32_t modKnobMode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	int32_t mod_knob_mode = 0;
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
 	requestVisualizerUpdateIfNeeded(view.displayVUMeter, isEnabled(),
-	                                view.activeModControllableModelStack.modControllable, modKnobMode);
+	                                view.activeModControllableModelStack.modControllable, mod_knob_mode);
 }
 
 void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled,
-                                                 ModControllable* modControllable, int32_t modKnobMode) {
+                                                 ModControllable* modControllable, int32_t mod_knob_mode) {
 	// Check if visualizer should be active
-	if (visualizer_enabled && displayVUMeter && modControllable && modKnobMode == 0) {
+	if (visualizer_enabled && displayVUMeter && modControllable != nullptr && mod_knob_mode == 0) {
 		// Enable visualizer if conditions are met
 		if (!displayVisualizer) {
 			displayVisualizer = true;
@@ -192,26 +188,26 @@ bool Visualizer::isEnabled() {
 
 /// Check if visualizer is actively running
 bool Visualizer::isActive() {
-	int32_t modKnobMode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	int32_t mod_knob_mode = 0;
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
-	return isActive(view.displayVUMeter, view.activeModControllableModelStack.modControllable, modKnobMode);
+	return isActive(view.displayVUMeter, view.activeModControllableModelStack.modControllable, mod_knob_mode);
 }
 
 /// Check if visualizer is actively running
 bool Visualizer::isActive(View& view) {
-	int32_t modKnobMode = 0;
-	if (view.activeModControllableModelStack.modControllable) {
-		modKnobMode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
+	int32_t mod_knob_mode = 0;
+	if (view.activeModControllableModelStack.modControllable != nullptr) {
+		mod_knob_mode = *view.activeModControllableModelStack.modControllable->getModKnobMode();
 	}
 
-	return isActive(view.displayVUMeter, view.activeModControllableModelStack.modControllable, modKnobMode);
+	return isActive(view.displayVUMeter, view.activeModControllableModelStack.modControllable, mod_knob_mode);
 }
 
-bool Visualizer::isActive(bool displayVUMeter, ModControllable* modControllable, int32_t modKnobMode) {
-	return isEnabled() && displayVUMeter && modControllable && modKnobMode == 0;
+bool Visualizer::isActive(bool displayVUMeter, ModControllable* modControllable, int32_t mod_knob_mode) {
+	return isEnabled() && displayVUMeter && modControllable != nullptr && mod_knob_mode == 0;
 }
 
 uint32_t Visualizer::getMode() {
