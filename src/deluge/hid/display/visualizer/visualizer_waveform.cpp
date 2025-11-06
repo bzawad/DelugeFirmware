@@ -1,5 +1,7 @@
 /*
- * Copyright © 2014-2023 Synthstrom Audible Deluge Firmware.
+ * Copyright (c) 2025 Bruce Zawadzki (Tone Coder)
+ *
+ * This file is part of The Synthstrom Audible Deluge Firmware.
  *
  * The Synthstrom Audible Deluge Firmware is free software: you can redistribute it and/or modify it under the
  * terms of the GNU General Public License as published by the Free Software Foundation,
