@@ -31,7 +31,9 @@ namespace deluge::hid::display {
 
 // Static member variables
 bool Visualizer::display_visualizer = false;
-uint32_t Visualizer::visualizerFrameCounter = 0;
+uint32_t Visualizer::visualizerFrameCounterWaveform = 0;
+uint32_t Visualizer::visualizerFrameCounterSpectrum = 0;
+uint32_t Visualizer::visualizerFrameCounterEqualizer = 0;
 
 // Visualizer sample buffer initialization
 alignas(CACHE_LINE_SIZE) std::array<int32_t, Visualizer::kVisualizerBufferSize> Visualizer::visualizerSampleBuffer{};
@@ -150,11 +152,30 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 		if (!display_visualizer) {
 			display_visualizer = true;
 		}
-		// Request OLED update for visualizer at reduced frame rate to prevent excessive CPU usage
-		// Update every 2 frames (~30fps instead of ~60fps) for better performance
-		visualizerFrameCounter++;
-		if (visualizerFrameCounter >= 2) {
-			visualizerFrameCounter = 0;
+
+		// Get current visualizer mode to determine appropriate framerate
+		uint32_t visualizer_mode = getMode();
+		uint32_t frameSkip = 2;                                   // Default 30fps for spectrum/equalizer
+		uint32_t* frameCounter = &visualizerFrameCounterSpectrum; // Default
+
+		// Set framerate based on visualizer type (all at 30fps for consistency)
+		if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform) {
+			frameSkip = 2; // 30fps for waveform
+			frameCounter = &visualizerFrameCounterWaveform;
+		}
+		else if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
+			frameSkip = 2; // 30fps for spectrum
+			frameCounter = &visualizerFrameCounterSpectrum;
+		}
+		else if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
+			frameSkip = 2; // 30fps for equalizer
+			frameCounter = &visualizerFrameCounterEqualizer;
+		}
+
+		// Request OLED update at appropriate frame rate
+		(*frameCounter)++;
+		if (*frameCounter >= frameSkip) {
+			*frameCounter = 0;
 			renderUIsForOled();
 		}
 		return;
@@ -167,7 +188,9 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 
 void Visualizer::reset() {
 	display_visualizer = false;
-	visualizerFrameCounter = 0;
+	visualizerFrameCounterWaveform = 0;
+	visualizerFrameCounterSpectrum = 0;
+	visualizerFrameCounterEqualizer = 0;
 }
 
 void Visualizer::setEnabled(bool enabled) {
@@ -218,16 +241,16 @@ void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderin
 	// Only sample if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode to save CPU cycles
 	if (isEnabled()) {
 		// Take every Nth sample to reduce CPU load - sample rate is 44.1kHz, we only need ~48-64 samples for display
-		// Sample every 4th sample to get ~11k samples/sec to capture quick transients (percussive hits)
-		constexpr uint32_t visualizer_sample_interval = 4;
+		// Sample every 2nd sample to get ~22k samples/sec for better responsiveness (slight CPU increase)
+		constexpr uint32_t visualizer_sample_interval = 2;
 		// Q31 to Q15 conversion: shift right by 16 bits (31-15 = 16)
 		constexpr uint32_t q31_to_q15_shift = 16;
 		static uint32_t sample_counter = 0;
 		sample_counter++;
 		if (sample_counter >= visualizer_sample_interval) {
 			sample_counter = 0;
-			// Take a sample from the middle of the buffer for better representation
-			size_t mid_sample = numSamples / 2;
+			// Take the most recent sample from the end of the buffer for minimum latency
+			size_t mid_sample = numSamples - 1;
 			if (mid_sample < renderingBuffer.size()) {
 				// Combine stereo channels: (L + R) / 2, then convert from Q31 to normalized int
 				int32_t sample_l = renderingBuffer[mid_sample].l >> q31_to_q15_shift; // Convert Q31 to Q15 range

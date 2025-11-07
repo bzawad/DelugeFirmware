@@ -26,7 +26,7 @@ namespace deluge::hid::display {
 // Shared constants (moved from visualizer.cpp anonymous namespace)
 namespace {
 // Visual compression parameters
-constexpr float kCompressionExponent = 0.45f;        // Soft knee compression
+constexpr float kCompressionExponent = 0.5f;         // 2:1 visual compression (square root)
 constexpr float kFrequencyBoostExponent = 0.075f;    // High-frequency boost
 constexpr float kFrequencyNormalizationHz = 1000.0f; // Frequency normalization base
 
@@ -34,21 +34,24 @@ constexpr float kFrequencyNormalizationHz = 1000.0f; // Frequency normalization 
 constexpr int32_t kDisplayMargin = 2; // Standard margin for visualizer display areas
 } // namespace
 
-// Helper function to get read start position from circular buffer
+// Helper function to get read start position from circular buffer for most recent samples
 uint32_t getVisualizerReadStartPos(uint32_t sampleCount) {
+	uint32_t writePos = Visualizer::visualizerWritePos.load(std::memory_order_acquire);
+
 	if (sampleCount >= Visualizer::kVisualizerBufferSize) {
-		// Buffer is full, oldest sample is at writePos (next to be overwritten)
-		return Visualizer::visualizerWritePos.load(std::memory_order_acquire);
+		// Buffer is full, start reading from the most recent samples (just before writePos)
+		// Go back by sampleCount to get the most recent samples
+		return (writePos - sampleCount) % Visualizer::kVisualizerBufferSize;
 	}
 	else {
-		// Buffer not full, start from beginning
-		return 0;
+		// Buffer not full, start from the most recent samples available
+		return (writePos - sampleCount) % Visualizer::kVisualizerBufferSize;
 	}
 }
 
 // Apply music sweet-spot visual compression to amplitude and frequency
 // Formula: (amplitude^kCompressionExponent) * ((frequency/kFrequencyNormalizationHz)^kFrequencyBoostExponent)
-// The compression exponent compresses dynamics (soft knee effect)
+// The compression exponent provides 2:1 visual compression (square root scaling)
 // The frequency boost term provides subtle high-frequency boost while reducing low-end dominance
 float applyVisualizerCompression(float amplitude, float frequency) {
 	// Normalize amplitude to 0-1 range if not already

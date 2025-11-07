@@ -21,18 +21,18 @@
 #include "hid/display/visualizer.h"
 #include "processing/engines/audio_engine.h"
 #include <algorithm>
+#include <cmath>
 
 namespace deluge::hid::display {
 
 // Waveform-specific constants
 namespace {
 // Visualizer calibration constants
-constexpr int32_t kWaveformReferenceMagnitude = 125; // Q15 format, ~-78dBFS typical audio
+constexpr int32_t kWaveformReferenceMagnitude = 250; // Q15 format
 constexpr int32_t kWaveformSilenceThreshold = 10;    // Q15 format
 
 // Visualizer update and display constants
-constexpr uint32_t kMaxDisplaySamples = 48;  // Reduced for waveform-style sparse display
-constexpr uint32_t kVisualizerFrameSkip = 2; // Update every 2 frames (~30fps instead of ~60fps)
+constexpr uint32_t kMaxDisplaySamples = 62; // Balanced for longer audio history while maintaining coarse style
 
 // Format conversion and display constants
 constexpr int32_t kSilenceCheckInterval = 16; // Interval for checking silence in loops (reduces CPU usage)
@@ -72,7 +72,7 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 	constexpr int32_t kFixedReferenceMagnitude = kWaveformReferenceMagnitude;
 
 	// Check for silence by examining a few representative samples
-	// If all samples are very small, draw baseline
+	// If all samples are very small, skip display update to avoid flicker
 	constexpr int32_t kSilenceThreshold = kWaveformSilenceThreshold;
 	int32_t sampleMagnitude = std::abs(
 	    Visualizer::visualizerSampleBuffer[(readStartPos + sampleCount / 2) % Visualizer::kVisualizerBufferSize]);
@@ -88,12 +88,8 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 			}
 		}
 		if (isSilent) {
-			// Clear the visualizer area
-			canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
-			                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
-			// Draw baseline at center (zero line for waveform)
-			canvas.drawHorizontalLine(kCenterY, kGraphMinX, kGraphMaxX);
-			OLED::markChanged();
+			// Don't update display during silence to avoid flicker from brief gaps
+			// Previous waveform frame remains visible
 			return;
 		}
 	}
@@ -121,16 +117,28 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 		// Get sample value
 		int32_t sample = Visualizer::visualizerSampleBuffer[bufferIndex];
 
-		// Calculate Y position using fixed amplitude scaling (center at kCenterY)
+		// Calculate Y position using compressed amplitude scaling (center at kCenterY)
+		// Apply 2:1 visual compression to match spectrum/equalizer visualizers
 		// Scale sample from [-kFixedReferenceMagnitude, +kFixedReferenceMagnitude] to display height
 		// Positive samples go up from center, negative samples go down
-		// Using fixed reference means actual signal levels are displayed, not auto-scaled
 		int32_t scaledHeight = 0;
 		if (sample != 0) {
-			// Scale linearly: height = (sample * (kGraphHeight / 2)) / kFixedReferenceMagnitude
-			// Use 64-bit intermediate to prevent overflow
-			scaledHeight = static_cast<int32_t>((static_cast<int64_t>(sample) * static_cast<int64_t>(kGraphHeight / 2))
-			                                    / kFixedReferenceMagnitude);
+			// Apply 2:1 compression: normalize, compress with square root, then scale
+			// Use absolute value for compression, then restore sign
+			float absSample = static_cast<float>(std::abs(sample));
+			float normalizedAmplitude = absSample / static_cast<float>(kFixedReferenceMagnitude);
+			// Clamp to valid range
+			normalizedAmplitude = std::clamp(normalizedAmplitude, 0.0f, 1.0f);
+			// Apply 2:1 compression (square root)
+			float compressedAmplitude = std::pow(normalizedAmplitude, 0.5f);
+			// Scale to display height and restore sign
+			float maxHeight = static_cast<float>(kGraphHeight / 2);
+			float compressedHeight = compressedAmplitude * maxHeight;
+			scaledHeight = static_cast<int32_t>(compressedHeight);
+			// Restore original sign
+			if (sample < 0) {
+				scaledHeight = -scaledHeight;
+			}
 		}
 
 		// Convert to pixel Y position (waveform: center at kCenterY, positive samples go up, negative go down)
@@ -144,7 +152,7 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 		y = std::clamp(y, static_cast<int32_t>(OLED_MAIN_TOPMOST_PIXEL + kMargin),
 		               static_cast<int32_t>(OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin - 1));
 
-		// Calculate X position - spread samples evenly across full width
+		// Calculate X position - spread samples across full width for coarse oscilloscope style
 		int32_t x = kGraphMinX + static_cast<int32_t>((i * (kGraphMaxX - kGraphMinX + 1)) / numSamplesToDisplay);
 		// Ensure we don't exceed bounds
 		if (x > kGraphMaxX) {

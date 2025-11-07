@@ -111,8 +111,8 @@ void updateAndDrawPeak(oled_canvas::Canvas& canvas, int32_t bar, float normalize
 		int32_t peakY = kGraphMaxY - peakHeightPixels;
 		peakY = std::clamp(peakY, kGraphMinY, kGraphMaxY);
 
-		// Draw 3-pixel thick horizontal line for peak indicator
-		for (int32_t thickness = -1; thickness <= 1; thickness++) {
+		// Draw 2-pixel thick horizontal line for peak indicator
+		for (int32_t thickness = 0; thickness <= 1; thickness++) {
 			int32_t drawY = peakY + thickness;
 			if (drawY >= kGraphMinY && drawY <= kGraphMaxY) {
 				canvas.drawHorizontalLine(drawY, barLeftX, barRightX);
@@ -233,9 +233,14 @@ void renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 		barRightX = std::clamp(barRightX, kEqualizerContentStartX, kEqualizerContentEndX);
 		barTopY = std::clamp(barTopY, kGraphMinY, kGraphMaxY);
 
-		// Draw filled bar using vertical lines (draw from left to right)
+		// Draw bar with checkered dither pattern using 2 pixel squares
 		for (int32_t x = barLeftX; x <= barRightX; x++) {
-			canvas.drawVerticalLine(x, barTopY, barBottomY);
+			for (int32_t y = barTopY; y <= barBottomY; y++) {
+				// Checkered pattern: draw pixel if (x + y) is even
+				if ((x + y) % 2 == 0) {
+					canvas.drawPixel(x, y);
+				}
+			}
 		}
 
 		// Update peak tracking and draw peak indicator

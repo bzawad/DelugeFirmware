@@ -134,11 +134,13 @@ public:
 	/// Whether visualizer display is enabled
 	static bool display_visualizer;
 
-	/// Frame counter for update timing
-	static uint32_t visualizerFrameCounter;
+	/// Frame counters for update timing (per visualizer type for different framerates)
+	static uint32_t visualizerFrameCounterWaveform;
+	static uint32_t visualizerFrameCounterSpectrum;
+	static uint32_t visualizerFrameCounterEqualizer;
 
 	/// Visualizer sample buffer and related variables
-	static constexpr size_t kVisualizerBufferSize = 256;
+	static constexpr size_t kVisualizerBufferSize = 512;
 	static std::array<int32_t, kVisualizerBufferSize> visualizerSampleBuffer;
 	static std::atomic<uint32_t> visualizerWritePos;
 	static std::atomic<uint32_t> visualizerSampleCount;
