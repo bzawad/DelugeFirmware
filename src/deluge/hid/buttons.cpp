@@ -24,6 +24,7 @@
 #include "gui/views/arranger_view.h"
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
+#include "hid/display/visualizer.h"
 #include "model/mod_controllable/mod_controllable.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "playback/mode/playback_mode.h"
@@ -149,6 +150,22 @@ ActionResult buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 	else if (b == SELECT_ENC) {
 		if (on) {
 			selectButtonPressUsedUp = false;
+		}
+	}
+
+	// Check for visualizer hotkeys (only when visualizer is active)
+	if (on && deluge::hid::display::Visualizer::isActive()) {
+		if (b == SYNTH) {
+			deluge::hid::display::Visualizer::setCurrentMode(RuntimeFeatureStateVisualizer::VisualizerWaveform);
+			goto dealtWith;
+		}
+		else if (b == KIT) {
+			deluge::hid::display::Visualizer::setCurrentMode(RuntimeFeatureStateVisualizer::VisualizerSpectrum);
+			goto dealtWith;
+		}
+		else if (b == MIDI) {
+			deluge::hid::display::Visualizer::setCurrentMode(RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+			goto dealtWith;
 		}
 	}
 

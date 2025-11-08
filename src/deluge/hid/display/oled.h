@@ -95,11 +95,13 @@ public:
 
 	static void renderEmulated7Seg(const std::array<uint8_t, kNumericDisplayLength>& display);
 
-	static oled_canvas::Canvas main;
-	static oled_canvas::Canvas popup;
-	static oled_canvas::Canvas console;
+	// Canvas layering (bottom to top):
+	static oled_canvas::Canvas main;       // Main UI canvas (bottom layer)
+	static oled_canvas::Canvas visualizer; // Visualizer canvas (above main)
+	static oled_canvas::Canvas console;    // Console canvas (above visualizer)
+	static oled_canvas::Canvas popup;      // Popup canvas (top layer)
 
-	// pointer to one of the three above (the one currently displayed)
+	// pointer to one of the canvases above (the one currently displayed)
 	static uint8_t (*oledCurrentImage)[OLED_MAIN_WIDTH_PIXELS];
 
 	static const uint8_t folderIcon[];

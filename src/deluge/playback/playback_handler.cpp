@@ -2329,19 +2329,11 @@ void PlaybackHandler::displayTempoBPM(float tempoBPM) {
 		UI* currentUI = getCurrentUI();
 		bool isSessionOrArranger = (currentUI == &sessionView || currentUI == &arrangerView);
 
-		if (isSessionOrArranger && !deluge::hid::display::OLED::isPermanentPopupPresent()
-		    && !deluge::hid::display::Visualizer::isActive()) {
-			// Direct canvas rendering (original behavior when visualizer not actively running)
+		if (isSessionOrArranger && !deluge::hid::display::OLED::isPermanentPopupPresent()) {
 			sessionView.lastDisplayedTempo = tempoBPM;
 			getTempoStringForOLED(tempoBPM, text);
 			sessionView.displayTempoBPM(deluge::hid::display::OLED::main, text, true);
 			deluge::hid::display::OLED::markChanged();
-		}
-		else {
-			// Popup rendering (for active visualizer users or fallback cases)
-			text.append("Tempo: ");
-			getTempoStringForOLED(tempoBPM, text);
-			display->popupTextTemporary(text.c_str(), PopupType::TEMPO);
 		}
 	}
 	else {

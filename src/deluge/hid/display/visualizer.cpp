@@ -31,6 +31,9 @@ namespace deluge::hid::display {
 
 // Static member variables
 bool Visualizer::display_visualizer = false;
+bool Visualizer::display_visualizer_independent = false;
+uint32_t Visualizer::current_visualizer_mode = 0; // 0 = use runtime setting
+uint32_t Visualizer::silenceStartTime = 0;
 uint32_t Visualizer::visualizerFrameCounterWaveform = 0;
 uint32_t Visualizer::visualizerFrameCounterSpectrum = 0;
 uint32_t Visualizer::visualizerFrameCounterEqualizer = 0;
@@ -41,43 +44,46 @@ std::atomic<uint32_t> Visualizer::visualizerWritePos{0};
 std::atomic<uint32_t> Visualizer::visualizerSampleCount{0};
 
 /// Render visualizer waveform or spectrum on OLED display
-void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
+void Visualizer::renderVisualizer() {
 	// Check visualizer mode
 	uint32_t visualizer_mode = getMode();
 
 	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum) {
 		// Render spectrum using FFT
-		::deluge::hid::display::renderVisualizerSpectrum(canvas);
+		::deluge::hid::display::renderVisualizerSpectrum(getVisualizerCanvas());
 		return;
 	}
 	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer) {
 		// Render equalizer using FFT
-		::deluge::hid::display::renderVisualizerEqualizer(canvas);
+		::deluge::hid::display::renderVisualizerEqualizer(getVisualizerCanvas());
 		return;
 	}
 	// Default to waveform rendering (for VisualizerWaveform)
-	::deluge::hid::display::renderVisualizerWaveform(canvas);
+	::deluge::hid::display::renderVisualizerWaveform(getVisualizerCanvas());
 }
 
 /// Render waveform visualization
-/// @param canvas The OLED canvas to render to
-void Visualizer::renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
-	::deluge::hid::display::renderVisualizerWaveform(canvas);
+void Visualizer::renderVisualizerWaveform() {
+	::deluge::hid::display::renderVisualizerWaveform(getVisualizerCanvas());
 }
 
 /// Render spectrum visualization using FFT
-/// @param canvas The OLED canvas to render to
-void Visualizer::renderVisualizerSpectrum(oled_canvas::Canvas& canvas) {
-	::deluge::hid::display::renderVisualizerSpectrum(canvas);
+void Visualizer::renderVisualizerSpectrum() {
+	::deluge::hid::display::renderVisualizerSpectrum(getVisualizerCanvas());
 }
 
 /// Render equalizer visualization with 16 frequency bands
-/// @param canvas The OLED canvas to render to
-void Visualizer::renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
-	::deluge::hid::display::renderVisualizerEqualizer(canvas);
+void Visualizer::renderVisualizerEqualizer() {
+	::deluge::hid::display::renderVisualizerEqualizer(getVisualizerCanvas());
+}
+
+/// Get reference to visualizer canvas for visualizer rendering
+oled_canvas::Canvas& Visualizer::getVisualizerCanvas() {
+	return OLED::visualizer;
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
+/// Renders to visualizer canvas and allows normal UI rendering to continue
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas) {
 	int32_t mod_knob_mode = 0;
 	if (view.activeModControllableModelStack.modControllable != nullptr) {
@@ -89,6 +95,7 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas) {
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
+/// Renders to visualizer canvas and allows normal UI rendering to continue
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& view) {
 	int32_t mod_knob_mode = 0;
 	if (view.activeModControllableModelStack.modControllable != nullptr) {
@@ -100,25 +107,47 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& 
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
+/// Renders to visualizer canvas and allows normal UI rendering to continue
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
                                              ModControllable* modControllable, int32_t mod_knob_mode) {
 	// Check if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode in runtime settings
 	if (visualizer_enabled) {
-		// Re-enable visualizer if VU meter is enabled and feature is in an active mode (handles case where
-		// display_visualizer was reset in focusRegained() but VU meter is still active)
-		if (displayVUMeter && modControllable != nullptr && mod_knob_mode == 0) {
+		bool shouldRender = false;
+
+		// Check independent mode conditions (visualizer is only controlled by SHIFT+LEVEL/PAN hotkey)
+		bool independentConditionsMet = display_visualizer_independent && modControllable != nullptr;
+
+		// Render only when independent mode is enabled
+		if (independentConditionsMet) {
+			shouldRender = true;
 			if (!display_visualizer) {
 				display_visualizer = true;
 			}
-			renderVisualizer(canvas);
-			return true;
+			// Render to visualizer canvas (displays above main UI)
+			renderVisualizer();
+			OLED::markChanged();
+		}
+
+		// Disable visualizer only if BOTH conditions fail AND independent mode is off
+		if (!shouldRender && display_visualizer) {
+			// Only disable if independent mode is also off
+			if (!display_visualizer_independent) {
+				display_visualizer = false;
+				getVisualizerCanvas().clear();
+				OLED::markChanged();
+			}
 		}
 	}
-	// If visualizer should be displayed but conditions aren't met, disable it
-	if (display_visualizer
-	    && (!visualizer_enabled || !displayVUMeter || modControllable == nullptr || mod_knob_mode != 0)) {
-		display_visualizer = false;
+	else {
+		// Visualizer feature not enabled - disable if currently displaying
+		if (display_visualizer) {
+			display_visualizer = false;
+			display_visualizer_independent = false; // Also clear independent state
+			getVisualizerCanvas().clear();
+			OLED::markChanged();
+		}
 	}
+	// Always return false to allow normal UI rendering to continue
 	return false;
 }
 
@@ -146,8 +175,11 @@ void Visualizer::requestVisualizerUpdateIfNeeded(View& view) {
 
 void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled,
                                                  ModControllable* modControllable, int32_t mod_knob_mode) {
-	// Check if visualizer should be active
-	if (visualizer_enabled && displayVUMeter && modControllable != nullptr && mod_knob_mode == 0) {
+	// Check independent mode conditions (visualizer is only controlled by SHIFT+LEVEL/PAN hotkey)
+	bool independentConditionsMet = visualizer_enabled && display_visualizer_independent && modControllable != nullptr;
+
+	// Check if visualizer should be active (only when independent mode is enabled)
+	if (independentConditionsMet) {
 		// Enable visualizer if conditions are met
 		if (!display_visualizer) {
 			display_visualizer = true;
@@ -180,21 +212,35 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 		}
 		return;
 	}
-	// Disable visualizer if conditions aren't met
-	if (display_visualizer) {
+	// Disable visualizer if conditions aren't met (only if independent mode is also off)
+	if (display_visualizer && !display_visualizer_independent) {
 		display_visualizer = false;
 	}
 }
 
 void Visualizer::reset() {
 	display_visualizer = false;
+	display_visualizer_independent = false;
+	current_visualizer_mode = 0; // Reset to use runtime setting
+	silenceStartTime = 0;
 	visualizerFrameCounterWaveform = 0;
 	visualizerFrameCounterSpectrum = 0;
 	visualizerFrameCounterEqualizer = 0;
+	// Clear visualizer canvas when resetting visualizer
+	getVisualizerCanvas().clear();
+	OLED::markChanged();
 }
 
 void Visualizer::setEnabled(bool enabled) {
 	display_visualizer = enabled;
+	if (!enabled) {
+		// Only clear visualizer canvas if independent mode is also off
+		// This prevents VU meter toggle from disabling independent visualizer
+		if (!display_visualizer_independent) {
+			getVisualizerCanvas().clear();
+			OLED::markChanged();
+		}
+	}
 }
 
 bool Visualizer::isDisplaying() {
@@ -229,11 +275,54 @@ bool Visualizer::isActive(View& view) {
 }
 
 bool Visualizer::isActive(bool displayVUMeter, ModControllable* modControllable, int32_t mod_knob_mode) {
-	return isEnabled() && displayVUMeter && modControllable != nullptr && mod_knob_mode == 0;
+	// Check independent mode conditions (visualizer is only controlled by SHIFT+LEVEL/PAN hotkey)
+	bool independentActive = isEnabled() && display_visualizer_independent && modControllable != nullptr;
+
+	// Active only when independent mode is enabled
+	return independentActive;
 }
 
 uint32_t Visualizer::getMode() {
+	// If a current mode override is set, return it
+	if (current_visualizer_mode != 0) {
+		return current_visualizer_mode;
+	}
+	// Otherwise return the runtime setting
 	return runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
+}
+
+void Visualizer::setCurrentMode(uint32_t mode) {
+	current_visualizer_mode = mode;
+}
+
+void Visualizer::resetCurrentMode() {
+	current_visualizer_mode = 0;
+}
+
+/// Toggle independent visualizer state (independent of VU meter)
+void Visualizer::toggleIndependent() {
+	// Only allow toggling if visualizer feature is enabled
+	if (!isEnabled()) {
+		return;
+	}
+
+	display_visualizer_independent = !display_visualizer_independent;
+	if (display_visualizer_independent) {
+		// Enable visualizer when toggling on
+		display_visualizer = true;
+		OLED::markChanged();
+	}
+	else {
+		// Disable visualizer and clear visualizer canvas when toggling off
+		display_visualizer = false;
+		getVisualizerCanvas().clear();
+		OLED::markChanged();
+	}
+}
+
+/// Get whether independent visualizer mode is enabled
+bool Visualizer::isIndependentEnabled() {
+	return display_visualizer_independent;
 }
 
 void Visualizer::sampleAudioForDisplay(deluge::dsp::StereoBuffer<q31_t> renderingBuffer, size_t numSamples) {

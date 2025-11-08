@@ -39,39 +39,45 @@ namespace deluge::hid::display {
 class Visualizer {
 public:
 	/// Main entry point for rendering visualizer
-	/// @param canvas The OLED canvas to render to
-	static void renderVisualizer(oled_canvas::Canvas& canvas);
+	/// Renders to the visualizer canvas (above main UI)
+	static void renderVisualizer();
 
 	/// Render waveform visualization
-	/// @param canvas The OLED canvas to render to
-	static void renderVisualizerWaveform(oled_canvas::Canvas& canvas);
+	/// Renders to the visualizer canvas
+	static void renderVisualizerWaveform();
 
 	/// Render spectrum visualization using FFT
-	/// @param canvas The OLED canvas to render to
-	static void renderVisualizerSpectrum(oled_canvas::Canvas& canvas);
+	/// Renders to the visualizer canvas
+	static void renderVisualizerSpectrum();
 
 	/// Render equalizer visualization with 16 frequency bands
-	/// @param canvas The OLED canvas to render to
-	static void renderVisualizerEqualizer(oled_canvas::Canvas& canvas);
+	/// Renders to the visualizer canvas
+	static void renderVisualizerEqualizer();
+
+	/// Get reference to visualizer canvas for visualizer rendering
+	/// @return Reference to the visualizer canvas
+	static oled_canvas::Canvas& getVisualizerCanvas();
 
 	/// Check if visualizer should be rendered and render it if conditions are met
-	/// @param canvas The OLED canvas to render to
-	/// @return true if visualizer was rendered
+	/// Renders to visualizer canvas and allows normal UI rendering to continue
+	/// @return false (always allows UI rendering to continue)
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas);
 
 	/// Check if visualizer should be rendered and render it if conditions are met
-	/// @param canvas The OLED canvas to render to
+	/// Renders to visualizer canvas and allows normal UI rendering to continue
+	/// @param canvas The OLED canvas (unused, kept for API compatibility)
 	/// @param view The current view containing VU meter and mod controllable state
-	/// @return true if visualizer was rendered
+	/// @return false (always allows UI rendering to continue)
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& view);
 
 	/// Check if visualizer should be rendered and render it if conditions are met
-	/// @param canvas The OLED canvas to render to
+	/// Renders to visualizer canvas and allows normal UI rendering to continue
+	/// @param canvas The OLED canvas (unused, kept for API compatibility)
 	/// @param displayVUMeter Whether VU meter is enabled
 	/// @param visualizerEnabled Whether visualizer feature is enabled
 	/// @param modControllable Current mod controllable
 	/// @param mod_knob_mode Current mod knob mode
-	/// @return true if visualizer was rendered
+	/// @return false (always allows UI rendering to continue)
 	static bool potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
 	                                        ModControllable* modControllable, int32_t mod_knob_mode);
 
@@ -121,9 +127,24 @@ public:
 	/// @return true if visualizer is actively running
 	static bool isActive(bool displayVUMeter, ModControllable* modControllable, int32_t mod_knob_mode);
 
-	/// Get current visualizer mode from runtime settings
+	/// Get current visualizer mode from runtime settings or temporary override
 	/// @return Current visualizer mode
 	static uint32_t getMode();
+
+	/// Set current visualizer mode temporarily (overrides runtime setting)
+	/// @param mode The visualizer mode to set (VisualizerWaveform, VisualizerSpectrum, VisualizerEqualizer)
+	static void setCurrentMode(uint32_t mode);
+
+	/// Reset current visualizer mode to use runtime setting
+	static void resetCurrentMode();
+
+	/// Toggle independent visualizer state (independent of VU meter)
+	/// Can be enabled/disabled via SHIFT+LEVEL/PAN mod button
+	static void toggleIndependent();
+
+	/// Get whether independent visualizer mode is enabled
+	/// @return true if independent visualizer is enabled
+	static bool isIndependentEnabled();
 
 	/// Sample audio data for visualizer display (waveform, spectrum, equalizer)
 	/// Performs downsampling and stores samples in the circular buffer for display
@@ -133,6 +154,15 @@ public:
 
 	/// Whether visualizer display is enabled
 	static bool display_visualizer;
+
+	/// Whether visualizer is enabled independently of VU meter
+	static bool display_visualizer_independent;
+
+	/// Current visualizer mode override (0 = use runtime setting, otherwise use this mode)
+	static uint32_t current_visualizer_mode;
+
+	/// Timestamp when silence was first detected (for delayed hiding)
+	static uint32_t silenceStartTime;
 
 	/// Frame counters for update timing (per visualizer type for different framerates)
 	static uint32_t visualizerFrameCounterWaveform;

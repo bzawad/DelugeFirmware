@@ -55,9 +55,12 @@ namespace deluge::hid::display {
 using ImageStore = oled_canvas::Canvas::ImageStore;
 
 uint8_t (*OLED::oledCurrentImage)[OLED_MAIN_WIDTH_PIXELS];
-oled_canvas::Canvas OLED::main;
-oled_canvas::Canvas OLED::popup;
-oled_canvas::Canvas OLED::console;
+
+// Canvas layering (bottom to top):
+oled_canvas::Canvas OLED::main;       // Main UI canvas (bottom layer)
+oled_canvas::Canvas OLED::visualizer; // Visualizer canvas (above main)
+oled_canvas::Canvas OLED::console;    // Console canvas (above visualizer)
+oled_canvas::Canvas OLED::popup;      // Popup canvas (top layer)
 
 bool OLED::needsSending;
 
@@ -360,13 +363,31 @@ void OLED::sendMainImage() {
 		return;
 	}
 
-	oledCurrentImage = &main.hackGetImageStore()[0];
+	// Check if visualizer has any content
+	bool hasVisualizerContent = false;
+	for (uint32_t row = 0; row < oled_canvas::Canvas::kImageHeight && !hasVisualizerContent; row++) {
+		for (uint32_t col = 0; col < oled_canvas::Canvas::kImageWidth; col++) {
+			if (visualizer.hackGetImageStore()[row][col] != 0) {
+				hasVisualizerContent = true;
+				break;
+			}
+		}
+	}
+
+	// If visualizer has content, display visualizer canvas directly (opaque like popups)
+	// Otherwise display main canvas
+	if (hasVisualizerContent) {
+		oledCurrentImage = &visualizer.hackGetImageStore()[0];
+	}
+	else {
+		oledCurrentImage = &main.hackGetImageStore()[0];
+	}
 
 	if (numConsoleItems) {
-		copyBackgroundAroundForeground(main.hackGetImageStore(), console.hackGetImageStore(), consoleMinX,
+		copyBackgroundAroundForeground(oledCurrentImage, console.hackGetImageStore(), consoleMinX,
 		                               consoleItems[numConsoleItems - 1].minY - 1, consoleMaxX,
 		                               OLED_MAIN_HEIGHT_PIXELS - 1);
-		oledCurrentImage = &console.hackGetImageStore()[0];
+		// Console is now composited onto current image (main or visualizer), continue displaying it
 	}
 	if (oledPopupWidth) {
 		copyBackgroundAroundForeground(oledCurrentImage, popup.hackGetImageStore(), popupMinX, popupMinY, popupMaxX,

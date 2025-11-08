@@ -133,7 +133,30 @@ FFTResult computeVisualizerFFT() {
 			// Use cached result
 			result.output = cachedFFT.cachedOutput;
 			result.isValid = true;
-			result.isSilent = isFFTSilent(cachedFFT.cachedOutput, kFFTSilenceThreshold);
+			bool isCurrentlySilent = isFFTSilent(cachedFFT.cachedOutput, kFFTSilenceThreshold);
+
+			// Apply silence delay timer (same as waveform visualizer)
+			constexpr uint32_t kSilenceDelaySamples = 22050; // 0.5 second at 44.1kHz
+			if (isCurrentlySilent) {
+				// Silence detected - start or check timer
+				if (Visualizer::silenceStartTime == 0) {
+					// First silence detection - record start time
+					Visualizer::silenceStartTime = AudioEngine::audioSampleTimer;
+				}
+				else {
+					// Check if silence has lasted 0.5 second
+					uint32_t silenceDuration = AudioEngine::audioSampleTimer - Visualizer::silenceStartTime;
+					result.isSilent = (silenceDuration >= kSilenceDelaySamples);
+				}
+			}
+			else {
+				// Sound detected - reset silence timer and clear silence state
+				if (Visualizer::silenceStartTime != 0) {
+					Visualizer::silenceStartTime = 0;
+				}
+				result.isSilent = false;
+			}
+
 			return result;
 		}
 	}
@@ -170,7 +193,30 @@ FFTResult computeVisualizerFFT() {
 
 	result.output = spectrumFFTOutput;
 	result.isValid = true;
-	result.isSilent = isFFTSilent(spectrumFFTOutput, kFFTSilenceThreshold);
+	bool isCurrentlySilent = isFFTSilent(spectrumFFTOutput, kFFTSilenceThreshold);
+
+	// Apply silence delay timer (same as waveform visualizer)
+	constexpr uint32_t kSilenceDelaySamples = 22050; // 0.5 second at 44.1kHz
+	if (isCurrentlySilent) {
+		// Silence detected - start or check timer
+		if (Visualizer::silenceStartTime == 0) {
+			// First silence detection - record start time
+			Visualizer::silenceStartTime = AudioEngine::audioSampleTimer;
+		}
+		else {
+			// Check if silence has lasted 0.5 second
+			uint32_t silenceDuration = AudioEngine::audioSampleTimer - Visualizer::silenceStartTime;
+			result.isSilent = (silenceDuration >= kSilenceDelaySamples);
+		}
+	}
+	else {
+		// Sound detected - reset silence timer and clear silence state
+		if (Visualizer::silenceStartTime != 0) {
+			Visualizer::silenceStartTime = 0;
+		}
+		result.isSilent = false;
+	}
+
 	return result;
 }
 

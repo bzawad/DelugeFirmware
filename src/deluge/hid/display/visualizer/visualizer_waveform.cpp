@@ -72,13 +72,16 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 	constexpr int32_t kFixedReferenceMagnitude = kWaveformReferenceMagnitude;
 
 	// Check for silence by examining a few representative samples
-	// If all samples are very small, skip display update to avoid flicker
+	// If all samples are very small, clear the display area after 0.5 second delay
 	constexpr int32_t kSilenceThreshold = kWaveformSilenceThreshold;
+	constexpr uint32_t kSilenceDelaySamples = 22050; // 0.5 second at 44.1kHz
+
 	int32_t sampleMagnitude = std::abs(
 	    Visualizer::visualizerSampleBuffer[(readStartPos + sampleCount / 2) % Visualizer::kVisualizerBufferSize]);
-	if (sampleMagnitude < kSilenceThreshold) {
+	bool isSilent = (sampleMagnitude < kSilenceThreshold);
+
+	if (isSilent) {
 		// Check a few more samples to confirm silence
-		bool isSilent = true;
 		for (uint32_t i = 0; i < numSamplesToDisplay; i += kSilenceCheckInterval) {
 			uint32_t bufferIndex = (readStartPos + i) % Visualizer::kVisualizerBufferSize;
 			int32_t mag = std::abs(Visualizer::visualizerSampleBuffer[bufferIndex]);
@@ -87,10 +90,29 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 				break;
 			}
 		}
-		if (isSilent) {
-			// Don't update display during silence to avoid flicker from brief gaps
-			// Previous waveform frame remains visible
-			return;
+	}
+
+	if (isSilent) {
+		// Silence detected - start or check timer
+		if (Visualizer::silenceStartTime == 0) {
+			// First silence detection - record start time
+			Visualizer::silenceStartTime = AudioEngine::audioSampleTimer;
+		}
+		else {
+			// Check if silence has lasted 0.5 second
+			uint32_t silenceDuration = AudioEngine::audioSampleTimer - Visualizer::silenceStartTime;
+			if (silenceDuration >= kSilenceDelaySamples) {
+				// Clear the visualizer area after 0.5 second of silence
+				canvas.clearAreaExact(kGraphMinX, OLED_MAIN_TOPMOST_PIXEL + kMargin, kGraphMaxX,
+				                      OLED_MAIN_TOPMOST_PIXEL + kDisplayHeight - kMargin + 1);
+				return;
+			}
+		}
+	}
+	else {
+		// Sound detected - reset silence timer
+		if (Visualizer::silenceStartTime != 0) {
+			Visualizer::silenceStartTime = 0;
 		}
 	}
 
@@ -184,9 +206,6 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 			remainderAccumulator -= kMaxDisplaySamples;
 		}
 	}
-
-	// Mark OLED as changed so it gets sent to display
-	OLED::markChanged();
 }
 
 } // namespace deluge::hid::display

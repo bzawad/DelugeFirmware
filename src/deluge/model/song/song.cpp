@@ -5765,10 +5765,7 @@ void Song::displayCurrentRootNoteAndScaleName() {
 		UI* currentUI = getCurrentUI();
 		bool isSessionView = (currentUI == &sessionView || currentUI == &arrangerView);
 
-		// only display pop-up if we're using 7SEG or we're not currently in Song / Arranger View
-		// OR if visualizer is actively running (to prevent conflicts)
-		if (isSessionView && !deluge::hid::display::OLED::isPermanentPopupPresent()
-		    && !deluge::hid::display::Visualizer::isActive()) {
+		if (isSessionView && !deluge::hid::display::OLED::isPermanentPopupPresent()) {
 			sessionView.displayCurrentRootNoteAndScaleName(deluge::hid::display::OLED::main, popupMsg, true);
 			deluge::hid::display::OLED::markChanged();
 			return;

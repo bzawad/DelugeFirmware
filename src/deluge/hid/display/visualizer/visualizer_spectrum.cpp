@@ -69,12 +69,10 @@ void renderVisualizerSpectrum(oled_canvas::Canvas& canvas) {
 	constexpr int32_t kFixedReferenceMagnitude = kFFTReferenceMagnitude;
 
 	// Check for silence by examining a few representative bins
-	// If all bins are very small, draw baseline
+	// If all bins are very small, clear the visualizer area after delay
 	if (fftResult.isSilent) {
+		// Clear the visualizer area completely (same as waveform visualizer)
 		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
-		// Draw baseline at bottom (zero line for spectrum)
-		canvas.drawHorizontalLine(kGraphMaxY, kGraphMinX, kGraphMaxX);
-		OLED::markChanged();
 		return;
 	}
 
@@ -177,9 +175,6 @@ void renderVisualizerSpectrum(oled_canvas::Canvas& canvas) {
 		lastX = x;
 		lastY = y;
 	}
-
-	// Mark OLED as changed so it gets sent to display
-	OLED::markChanged();
 }
 
 } // namespace deluge::hid::display

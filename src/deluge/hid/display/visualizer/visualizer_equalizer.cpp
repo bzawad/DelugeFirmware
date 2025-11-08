@@ -169,17 +169,10 @@ void renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 	constexpr int32_t kFixedReferenceMagnitude = kFFTReferenceMagnitude;
 
 	// Check for silence by examining a few representative bins
-	// If all bins are very small, draw baseline
+	// If all bins are very small, clear the visualizer area after delay
 	if (fftResult.isSilent) {
+		// Clear the visualizer area completely (same as waveform visualizer)
 		canvas.clearAreaExact(kGraphMinX, kGraphMinY, kGraphMaxX, kGraphMaxY + 1);
-		// Draw baseline as individual 1-pixel bars at each bar location (not a full-width line)
-		for (int32_t bar = 0; bar < kEqualizerNumBars; bar++) {
-			int32_t barLeftX = kEqualizerContentStartX + (bar * (kBarWidth + kBarGap));
-			int32_t barRightX = barLeftX + kBarWidth - 1;
-			// Draw 1-pixel baseline at bottom of each bar location
-			canvas.drawHorizontalLine(kGraphMaxY, barLeftX, barRightX);
-		}
-		OLED::markChanged();
 		return;
 	}
 
@@ -248,9 +241,6 @@ void renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 		updateAndDrawPeak(canvas, bar, normalizedHeight, barLeftX, barRightX, kGraphMinY, kGraphMaxY, kGraphHeight,
 		                  visualizer_mode);
 	}
-
-	// Mark OLED as changed so it gets sent to display
-	OLED::markChanged();
 }
 
 } // namespace deluge::hid::display
