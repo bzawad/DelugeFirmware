@@ -46,6 +46,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -1902,6 +1903,11 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		return;
 	}
 
+	// Check if visualizer should be displayed (same conditions as VU meter)
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
 		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip());
@@ -2205,6 +2211,9 @@ void SessionView::graphicsRoutine() {
 		PadLEDs::sendOutSidebarColours();
 	}
 
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded();
+
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);
 	}
@@ -2392,9 +2401,19 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 				popupMsg.appendInt(quarterNotesRemaining);
 			}
 			if (display->haveOLED() && !ephemeral) {
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
-				deluge::hid::display::OLED::sendMainImage();
+				// Check if visualizer is enabled AND actively running
+				bool visualizer_active = deluge::hid::display::Visualizer::isActive(view.displayVUMeter);
+
+				if (visualizer_active) {
+					// Use popup for active visualizer users
+					display->popupText(popupMsg.c_str(), PopupType::GENERAL);
+				}
+				else {
+					// Direct rendering for non-active visualizer users (original behavior)
+					deluge::hid::display::OLED::clearMainImage();
+					deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
+					deluge::hid::display::OLED::sendMainImage();
+				}
 			}
 			else {
 				display->displayPopup(popupMsg.c_str(), 1, true);

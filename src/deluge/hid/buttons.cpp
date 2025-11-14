@@ -24,6 +24,7 @@
 #include "gui/views/arranger_view.h"
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
+#include "hid/display/visualizer.h"
 #include "model/mod_controllable/mod_controllable.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "playback/mode/playback_mode.h"
@@ -40,6 +41,7 @@ namespace Buttons {
 
 bool recordButtonPressUsedUp;
 uint32_t timeRecordButtonPressed;
+bool selectButtonPressUsedUp;
 /**
  * AudioEngine::audioSampleTimer value at which the shift button was pressed. Used to distinguish between short and
  * long shift presses, for sticky keys.
@@ -79,6 +81,9 @@ ActionResult buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 	// function, and don't want to then be setting this after that later action, erasing what it set
 	auto xy = deluge::hid::button::toXY(b);
 	buttonStates[xy.x][xy.y] = on;
+
+	// Get current UI for visualizer checks
+	UI* currentUI = getCurrentUI();
 
 #if ALLOW_SPAM_MODE
 	if (b == X_ENC) {
@@ -143,6 +148,30 @@ ActionResult buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 		if (on) {
 			// The next release has a chance of toggling cross screen mode
 			considerCrossScreenReleaseForCrossScreenMode = true;
+		}
+	}
+	else if (b == SELECT_ENC) {
+		if (on) {
+			selectButtonPressUsedUp = false;
+		}
+	}
+
+	// Handle visualizer mode switching when visualizer is active in Arranger or Song view
+	if (on && (currentUI == &sessionView || currentUI == &arrangerView)
+	    && deluge::hid::display::Visualizer::isActive(view.displayVUMeter)
+	    && currentUIMode != UI_MODE_CLIP_PRESSED_IN_SONG_VIEW
+	    && currentUIMode != UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
+		if (b == SYNTH) {
+			deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerWaveform);
+			goto dealtWith;
+		}
+		else if (b == KIT) {
+			deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerSpectrum);
+			goto dealtWith;
+		}
+		else if (b == MIDI) {
+			deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+			goto dealtWith;
 		}
 	}
 

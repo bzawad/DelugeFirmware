@@ -102,6 +102,32 @@ static void SetupEmulatedDisplaySetting(RuntimeFeatureSetting& setting, deluge::
 	};
 }
 
+static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n::String displayName,
+                                   std::string_view xmlName, RuntimeFeatureStateVisualizer def) {
+	setting.displayName = displayName;
+	setting.xmlName = xmlName;
+	setting.value = static_cast<uint32_t>(def);
+
+	setting.options = {
+	    {
+	        .displayName = "Off",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerOff,
+	    },
+	    {
+	        .displayName = display->haveOLED() ? "Waveform" : "WAVE",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerWaveform,
+	    },
+	    {
+	        .displayName = display->haveOLED() ? "Spectrum" : "SPEC",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerSpectrum,
+	    },
+	    {
+	        .displayName = display->haveOLED() ? "Equalizer" : "EQ",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerEqualizer,
+	    },
+	};
+}
+
 void RuntimeFeatureSettings::init() {
 	using enum deluge::l10n::String;
 	// Drum randomizer
@@ -199,6 +225,10 @@ void RuntimeFeatureSettings::init() {
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::TrimFromStartOfAudioClip],
 	                  STRING_FOR_COMMUNITY_FEATURE_TRIM_FROM_START_OF_AUDIO_CLIP, "trimFromStartOfAudioClip",
 	                  RuntimeFeatureStateToggle::On);
+
+	// Visualizer
+	SetupVisualizerSetting(settings[RuntimeFeatureSettingType::Visualizer], STRING_FOR_COMMUNITY_FEATURE_VISUALIZER,
+	                       "visualizer", RuntimeFeatureStateVisualizer::VisualizerOff);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile() {
