@@ -99,6 +99,9 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 				display_visualizer = true;
 			}
 			renderVisualizer(canvas);
+			// Set permanent popup flag so parameter changes show in popups instead of trying to render to occupied canvas
+			extern bool drawnPermanentPopup;
+			drawnPermanentPopup = true;
 			return true;
 		}
 	}
@@ -106,6 +109,9 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 	// If visualizer should be displayed but conditions aren't met, disable it
 	if (display_visualizer && (!visualizer_enabled || (!displayVUMeter && !visualizer_toggle_enabled))) {
 		display_visualizer = false;
+		// Clear permanent popup flag so parameter changes can render directly to display again
+		extern bool drawnPermanentPopup;
+		drawnPermanentPopup = false;
 	}
 	return false;
 }
@@ -142,11 +148,17 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 	// Disable visualizer if conditions aren't met
 	if (display_visualizer) {
 		display_visualizer = false;
+		// Clear permanent popup flag so parameter changes can render directly to display again
+		extern bool drawnPermanentPopup;
+		drawnPermanentPopup = false;
 	}
 }
 
 void Visualizer::reset() {
 	display_visualizer = false;
+	// Clear permanent popup flag so parameter changes can render directly to display again
+	extern bool drawnPermanentPopup;
+	drawnPermanentPopup = false;
 	// Don't reset session_visualizer_mode here - it should persist within the same song
 	// and only reset when loading a new song
 	visualizer_frame_counter = 0;
@@ -154,6 +166,11 @@ void Visualizer::reset() {
 
 void Visualizer::setEnabled(bool enabled) {
 	display_visualizer = enabled;
+	if (!enabled) {
+		// Clear permanent popup flag so parameter changes can render directly to display again
+		extern bool drawnPermanentPopup;
+		drawnPermanentPopup = false;
+	}
 }
 
 bool Visualizer::isDisplaying() {
