@@ -1369,6 +1369,8 @@ Note: these settings are saved to `SETTINGS/CommunityFeatures.XML` on your SD ca
     * When On, some menu items render in horizontal menus, with multiple items visible and editable at the same time.
 * `Trim from start of audio clips (TRIM)`
     * When On, the ability to trim from the start of an audio clip without needing to reverse it is enabled.
+* `Visualizer (VISU)`
+    * When On, enables real-time audio visualizations on the OLED display. Provides three visualization modes: Waveform, Spectrum, and Equalizer to help monitor audio output and frequency content. Works by default with the VU meter or can be toggled independently.
 
 ## 6. Sysex Handling
 

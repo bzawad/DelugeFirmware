@@ -5851,6 +5851,15 @@ void Song::adjustMasterTransposeInterval(int32_t interval) {
 	displayMasterTransposeInterval();
 }
 
+void Song::commandTranspose(int32_t interval) {
+	if (Buttons::isShiftButtonPressed()) {
+		adjustMasterTransposeInterval(interval);
+	}
+	else {
+		transpose(interval);
+	}
+}
+
 void Song::displayMasterTransposeInterval() {
 	DEF_STACK_STRING_BUF(popupMsg, 40);
 

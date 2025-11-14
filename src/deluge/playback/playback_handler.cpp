@@ -34,6 +34,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -1368,6 +1369,8 @@ void PlaybackHandler::doSongSwap(bool preservePlayPosition) {
 	AudioEngine::killAllVoices(true);
 	midiFollow.clearStoredClips(); // need to clear clip pointers stored for previous song
 	currentSong = preLoadedSong;
+	// Reset visualizer session mode when loading a new song
+	deluge::hid::display::Visualizer::resetSessionMode();
 	AudioEngine::mustUpdateReverbParamsBeforeNextRender = true;
 	preLoadedSong = nullptr;
 	loadSongUI.deletedPartsOfOldSong = false;

@@ -24,6 +24,7 @@
 #include "gui/views/arranger_view.h"
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
+#include "hid/display/visualizer.h"
 #include "model/mod_controllable/mod_controllable.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "playback/mode/playback_mode.h"
@@ -153,6 +154,28 @@ ActionResult buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 	}
 
 	result = getCurrentUI()->buttonAction(b, on, inCardRoutine);
+
+	// Handle visualizer mode switching when visualizer is active in Arranger or Song view
+	{
+		UI* currentUI = getCurrentUI();
+		if (on && (currentUI == &sessionView || currentUI == &arrangerView)
+		    && deluge::hid::display::Visualizer::isActive(view.displayVUMeter)
+		    && currentUIMode != UI_MODE_CLIP_PRESSED_IN_SONG_VIEW
+		    && currentUIMode != UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
+			if (b == SYNTH) {
+				deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerWaveform);
+				goto dealtWith;
+			}
+			else if (b == KIT) {
+				deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerSpectrum);
+				goto dealtWith;
+			}
+			else if (b == MIDI) {
+				deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+				goto dealtWith;
+			}
+		}
+	}
 
 	if (result == ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE) {
 		return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;

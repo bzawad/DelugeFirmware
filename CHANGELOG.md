@@ -528,6 +528,13 @@ also affect normal sequenced notes while arpeggiator is Off.
 - Fixed several cases where popups could get stuck open.
 - Fixed a number of minor rendering bugs.
 
+#### <ins>Audio Visualizer</ins>
+- Added real-time audio visualizer feature that displays audio signal visualizations on the OLED screen
+- Three visualization modes: Waveform (time-domain), Spectrum (frequency-domain using FFT), and Equalizer (16-band frequency analysis)
+- Works by default with the VU meter or can be toggled independently for standalone use
+- Can be toggled independently using `SHIFT + LEVEL/PAN` mod button for quick access
+- Hot keys allow switching between modes: `SYNTH` for Waveform, `KIT` for Spectrum, `MIDI` for Equalizer
+
 #### <ins>Mod (Gold Encoders)</ins>
 - Added Mod Button popups to display the current Mod (Gold) Encoder context (e.g. LPF/HPF Mode, Delay Mode and Type, Reverb Room Size, Compressor Mode, ModFX Type and Param).
 - Mod (Gold) Encoders learned to the Mod Matrix can now access the full range of the Mod Matrix / Patch Cable parameters (Values from -50 to +50 where previously only 0 to +50 were accesible via Mod (Gold) Encoders).

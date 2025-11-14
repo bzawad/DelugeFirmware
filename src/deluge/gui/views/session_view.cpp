@@ -46,6 +46,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -1905,6 +1906,11 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		return;
 	}
 
+	// Check if visualizer should be displayed (same conditions as VU meter)
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
 		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip());
@@ -2207,6 +2213,9 @@ void SessionView::graphicsRoutine() {
 	if (view.potentiallyRenderVUMeter(PadLEDs::image)) {
 		PadLEDs::sendOutSidebarColours();
 	}
+
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded();
 
 	if (display->haveOLED()) {
 		displayPotentialTempoChange(this);

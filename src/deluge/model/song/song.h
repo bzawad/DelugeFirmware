@@ -419,6 +419,7 @@ public:
 	// Song level transpose control (encoder actions)
 	int32_t masterTransposeInterval;
 	void transpose(int32_t interval);
+	void commandTranspose(int32_t interval);
 	void adjustMasterTransposeInterval(int32_t interval);
 	void displayMasterTransposeInterval();
 
