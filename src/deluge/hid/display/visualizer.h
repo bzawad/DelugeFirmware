@@ -54,6 +54,10 @@ public:
 	/// @param canvas The OLED canvas to render to
 	static void renderVisualizerEqualizer(oled_canvas::Canvas& canvas);
 
+	/// Render circle visualization with frequency bands as concentric circles
+	/// @param canvas The OLED canvas to render to
+	static void renderVisualizerCircle(oled_canvas::Canvas& canvas);
+
 	/// Check if visualizer should be rendered and render it if conditions are met
 	/// @param canvas The OLED canvas to render to
 	/// @return true if visualizer was rendered

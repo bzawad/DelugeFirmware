@@ -19,6 +19,7 @@ The visualizer must first be enabled in the Community Settings menu:
    - `WAVEFORM` - Shows audio waveform over time
    - `SPECTRUM` - Shows frequency spectrum using FFT
    - `EQUALIZER` - Shows 16 frequency bands with peak indicators
+   - `CIRCLE` - Shows frequency bands as concentric circles
 
 ## Display Conditions
 
@@ -31,7 +32,7 @@ To enable the visualizer display, you must first enable the VU meter:
 
 The visualizer only appears when all of the following conditions are met:
 
-- **Community Setting**: Visualizer must be set to Waveform, Spectrum, or Equalizer (not Off)
+- **Community Setting**: Visualizer must be set to Waveform, Spectrum, Equalizer, or Circle (not Off)
 - **VU Meter**: The VU meter must be enabled as described above
 - **AffectEntire**: The :key[AffectEntire] button must remain enabled
 - **LEVEL/PAN Mod Button**: The `LEVEL/PAN` mod button must remain selected
@@ -77,6 +78,18 @@ Equalizer mode displays the audio signal across 16 frequency bands, similar to a
 
 To activate Equalizer mode, press the :key[MIDI] button while the visualizer is active.
 
+### Circle Mode <Badge text="c1.5" variant="tip" />
+
+Circle mode displays audio frequency content as concentric circles, with different frequency bands represented by circles of varying radii.
+
+- **Outer circle (Low frequencies)**: 20-250 Hz range, largest radius
+- **Middle circle (Mid frequencies)**: 250-2000 Hz range, medium radius
+- **Inner circle (High frequencies)**: 2000-20000 Hz range, smallest radius
+
+Each circle's thickness and intensity varies based on the amplitude of its corresponding frequency band, creating a radial representation of the audio spectrum.
+
+To activate Circle mode, press the :key[CV] button while the visualizer is active.
+
 ## Hot Key Controls
 
 When the visualizer is active (displaying on screen), you can switch between modes using the following hot keys:
@@ -84,6 +97,7 @@ When the visualizer is active (displaying on screen), you can switch between mod
 - :key[SYNTH] - Switch to Waveform mode
 - :key[KIT] - Switch to Spectrum mode
 - :key[MIDI] - Switch to Equalizer mode
+- :key[CV] - Switch to Circle mode
 
 These mode changes are temporary for the current session and don't affect your community setting preference.
 

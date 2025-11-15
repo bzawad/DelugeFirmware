@@ -45,7 +45,8 @@ enum RuntimeFeatureStateVisualizer : uint32_t {
 	VisualizerOff = 0,
 	VisualizerWaveform = 1,
 	VisualizerSpectrum = 2,
-	VisualizerEqualizer = 3
+	VisualizerEqualizer = 3,
+	VisualizerCircle = 4 // Circle visualization with frequency bands as concentric circles
 };
 
 /// Every setting needs to be declared in here

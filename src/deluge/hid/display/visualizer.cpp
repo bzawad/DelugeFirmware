@@ -21,6 +21,7 @@
 #include "gui/l10n/l10n.h"
 #include "gui/ui/ui.h"
 #include "gui/views/view.h"
+#include "hid/display/visualizer/visualizer_circle.h"
 #include "hid/display/visualizer/visualizer_equalizer.h"
 #include "hid/display/visualizer/visualizer_spectrum.h"
 #include "hid/display/visualizer/visualizer_waveform.h"
@@ -44,6 +45,11 @@ void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
 		::deluge::hid::display::renderVisualizerEqualizer(canvas);
 		return;
 	}
+	if (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerCircle) {
+		// Render circle visualization using FFT
+		::deluge::hid::display::renderVisualizerCircle(canvas);
+		return;
+	}
 	// Default to waveform rendering (for VisualizerWaveform)
 	::deluge::hid::display::renderVisualizerWaveform(canvas);
 }
@@ -64,6 +70,12 @@ void Visualizer::renderVisualizerSpectrum(oled_canvas::Canvas& canvas) {
 /// @param canvas The OLED canvas to render to
 void Visualizer::renderVisualizerEqualizer(oled_canvas::Canvas& canvas) {
 	::deluge::hid::display::renderVisualizerEqualizer(canvas);
+}
+
+/// Render circle visualization with frequency bands as concentric circles
+/// @param canvas The OLED canvas to render to
+void Visualizer::renderVisualizerCircle(oled_canvas::Canvas& canvas) {
+	::deluge::hid::display::renderVisualizerCircle(canvas);
 }
 
 /// Check if visualizer should be rendered and render it if conditions are met
@@ -164,7 +176,8 @@ bool Visualizer::isEnabled() {
 	uint32_t visualizer_mode = runtimeFeatureSettings.get(RuntimeFeatureSettingType::Visualizer);
 	return (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerWaveform)
 	       || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerSpectrum)
-	       || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer);
+	       || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerEqualizer)
+	       || (visualizer_mode == RuntimeFeatureStateVisualizer::VisualizerCircle);
 }
 
 /// Check if visualizer is actively running

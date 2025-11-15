@@ -125,6 +125,10 @@ static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n:
 	        .displayName = display->haveOLED() ? "Equalizer" : "EQ",
 	        .value = RuntimeFeatureStateVisualizer::VisualizerEqualizer,
 	    },
+	    {
+	        .displayName = display->haveOLED() ? "Circle" : "CIRC",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerCircle,
+	    },
 	};
 }
 

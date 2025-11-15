@@ -173,6 +173,10 @@ ActionResult buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 			deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerEqualizer);
 			goto dealtWith;
 		}
+		else if (b == CV) { // CV button for Circle mode
+			deluge::hid::display::Visualizer::setSessionMode(RuntimeFeatureStateVisualizer::VisualizerCircle);
+			goto dealtWith;
+		}
 	}
 
 	result = getCurrentUI()->buttonAction(b, on, inCardRoutine);
