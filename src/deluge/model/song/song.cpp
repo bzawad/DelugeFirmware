@@ -29,6 +29,7 @@
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -5821,7 +5822,9 @@ void Song::displayCurrentRootNoteAndScaleName() {
 		UI* currentUI = getCurrentUI();
 		bool isSessionView = (currentUI == &sessionView || currentUI == &arrangerView);
 		// only display pop-up if we're using 7SEG or we're not currently in Song / Arranger View
-		if (isSessionView && !deluge::hid::display::OLED::isPermanentPopupPresent()) {
+		// OR if visualizer is actively running (to prevent conflicts)
+		if (isSessionView && !deluge::hid::display::OLED::isPermanentPopupPresent()
+		    && !deluge::hid::display::Visualizer::isActive(view.displayVUMeter)) {
 			sessionView.displayCurrentRootNoteAndScaleName(deluge::hid::display::OLED::main, popupMsg, true);
 			deluge::hid::display::OLED::markChanged();
 			return;

@@ -34,6 +34,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -2332,7 +2333,8 @@ void PlaybackHandler::displayTempoBPM(float tempoBPM) {
 		UI* currentUI = getCurrentUI();
 		// if we're currently in song or arranger view, we'll render tempo on the display instead of a popup
 		if ((currentUI == &sessionView || currentUI == &arrangerView)
-		    && !deluge::hid::display::OLED::isPermanentPopupPresent()) {
+		    && !deluge::hid::display::OLED::isPermanentPopupPresent()
+		    && !deluge::hid::display::Visualizer::isActive(view.displayVUMeter)) {
 			sessionView.lastDisplayedTempo = tempoBPM;
 			getTempoStringForOLED(tempoBPM, text);
 			sessionView.displayTempoBPM(deluge::hid::display::OLED::main, text, true);
