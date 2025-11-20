@@ -1369,6 +1369,8 @@ void PlaybackHandler::doSongSwap(bool preservePlayPosition) {
 	AudioEngine::killAllVoices(true);
 	midiFollow.clearStoredClips(); // need to clear clip pointers stored for previous song
 	currentSong = preLoadedSong;
+	// Reset visualizer session mode when loading a new song
+	deluge::hid::display::Visualizer::resetSessionMode();
 	AudioEngine::mustUpdateReverbParamsBeforeNextRender = true;
 	preLoadedSong = nullptr;
 	loadSongUI.deletedPartsOfOldSong = false;
