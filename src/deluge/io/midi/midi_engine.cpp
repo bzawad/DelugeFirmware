@@ -425,6 +425,11 @@ void MidiEngine::sendNote(MIDISource source, bool on, int32_t note, uint8_t velo
 	velocity = std::max((uint8_t)1, velocity);
 	velocity = std::min((uint8_t)127, velocity);
 
+	// Hook for MIDI piano roll visualizer - capture all MIDI output
+	bool visualizerActive =
+	    (::deluge::hid::display::Visualizer::getMode() == RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll);
+	::deluge::hid::display::midiPianoRollNoteEvent(static_cast<uint8_t>(note), on, velocity, visualizerActive);
+
 	if (on) {
 		sendMidi(source, MIDIMessage::noteOn(channel, note, velocity), filter);
 	}
@@ -991,6 +996,14 @@ void MidiEngine::midiMessageReceived(MIDICable& cable, uint8_t statusType, uint8
 
 			case 0x08: // Note off, and note on continues here too
 				playbackHandler.noteMessageReceived(cable, statusType & 1, channel, data1, data2, &shouldDoMidiThruNow);
+
+				// Hook for MIDI piano roll visualizer - capture all MIDI input
+				{
+					bool visualizerActive = (::deluge::hid::display::Visualizer::getMode()
+					                         == RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll);
+					::deluge::hid::display::midiPianoRollNoteEvent(static_cast<uint8_t>(data1), statusType & 1,
+					                                               static_cast<uint8_t>(data2), visualizerActive, true);
+				}
 #if MISSING_MESSAGE_CHECK
 				if (lastWasNoteOn == (bool)(statusType & 1))
 					FREEZE_WITH_ERROR("MISSED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
