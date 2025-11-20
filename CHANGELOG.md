@@ -237,6 +237,8 @@ at velocity 0 it would look the same as its tail (but you can't have 0 velocity)
 
 - Added toggle in `SETTINGS > DEFAULTS > UI > USE SHARPS(#) (SHRP)` to allow users to choose which accidentals to display. When enabled in OLED mode, notes will be displayed as A# or D#, as they did prior to this change. When disabled, notes will be displayed as B♭ or E♭. In 7SEG mode, a dot is used to indicade when the note has the configured accidental.
 
+#### <ins>Visualizer</ins>
+- **Visualizer**: Real-time audio visualizations on OLED display with 11 different modes including waveform, spectrum analyzers, 3D graphics, and MIDI piano roll. Access via Community Settings menu and control with SYNTH/KIT/MIDI/CV buttons when active.
 
 ### Sequencer
 

@@ -20,6 +20,8 @@
 #include "gui/l10n/l10n.h"
 #include "gui/ui/sound_editor.h"
 #include "hid/display/display.h"
+#include "hid/display/visualizer.h"
+#include "hid/display/visualizer/visualizer_midi_piano_roll.h"
 #include "hid/hid_sysex.h"
 #include "io/debug/log.h"
 #include "io/midi/midi_device.h"

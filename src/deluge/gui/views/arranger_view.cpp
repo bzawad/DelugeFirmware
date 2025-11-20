@@ -38,6 +38,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoder.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
@@ -117,6 +118,10 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 		view.displayOutputName(output);
 	}
 	else {
+		// Check if visualizer should be displayed (same conditions as VU meter)
+		if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+			return;
+		}
 		sessionView.renderOLED(canvas);
 	}
 }
@@ -3134,6 +3139,9 @@ void ArrangerView::graphicsRoutine() {
 	if (view.potentiallyRenderVUMeter(PadLEDs::image)) {
 		PadLEDs::sendOutSidebarColours();
 	}
+
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded();
 
 	if (display->haveOLED()) {
 		sessionView.displayPotentialTempoChange(this);
