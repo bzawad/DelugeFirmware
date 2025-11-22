@@ -17,16 +17,15 @@ The visualizer must first be enabled in the Community Settings menu:
 4. Choose one of the main visualization modes:
    - `OFF` - Visualizer disabled (default)
    - `WAVEFORM` - Shows audio waveform over time
-   - `MIDI PIANO ROLL` - Shows real-time piano roll of incoming MIDI notes
    - `LINE SPECTRUM` - Shows frequency spectrum using FFT
-   - `BAR SPECTRUM` - Shows 16 frequency bands with peak indicators
+   - `MIDI PIANO ROLL` - Shows real-time piano roll of incoming and outgoing MIDI notes
 
 Additional special visualizers are available via hot key controls but cannot be selected as the default mode:
-- `STEREO LINE SPECTRUM` - Horizontal frequency spectrum with true stereo processing
-- `STEREO BAR SPECTRUM` - Horizontal 8-band equalizer with true stereo processing
+- `STEREO LINE SPECTRUM` - Horizontal frequency line spectrum with true stereo processing
+- `STEREO BAR SPECTRUM` - Horizontal 8-band spectrum with true stereo processing and peak indicators
 - `CUBE` - 3D wireframe cube that rotates and bounces with audio
 - `SKYLINE` - City skyline with buildings responding to audio
-- `STARFIELD` - Hyperspace journey with moving stars
+- `STARFIELD` - Hyperspace journey with moving stars and a flying saucer
 - `TUNNEL` - Animated concentric rings moving toward viewer
 - `PULSE GRID` - Mirrored frequency grid with pulsing cells
 
@@ -41,7 +40,7 @@ To enable the visualizer display, you must first enable the VU meter:
 
 The visualizer only appears when all of the following conditions are met:
 
-- **Community Setting**: Visualizer must be set to Waveform, MIDI Piano Roll, Line Spectrum, or Bar Spectrum (not Off). Special visualizers are only accessible via CV button.
+- **Community Setting**: Visualizer must be set to Waveform, Line Spectrum, or MIDI Piano Roll (not Off). Special visualizers are only accessible via CV button.
 - **VU Meter**: The VU meter must be enabled as described above
 - **AffectEntire**: The :key[AffectEntire] button must remain enabled
 - **LEVEL/PAN Mod Button**: The `LEVEL/PAN` mod button must remain selected
@@ -54,165 +53,105 @@ Alternatively, you can use the independent visualizer toggle to display the visu
 
 ### Waveform Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Waveform mode displays the audio signal as a continuous waveform over time, similar to what you might see in a digital audio workstation.
+Waveform mode displays the audio signal as a continuous waveform over time.
 
-- Shows the raw audio signal amplitude over a recent time window
-- Displays both left and right channels when available
-- Uses a center line to show the zero crossing point
-- Provides a visual representation of the audio's dynamic range and shape
-
-To activate Waveform mode, press the :key[SYNTH] button while the visualizer is active.
+- Shows raw audio signal amplitude from a recent time window
+- Combines left and right channels for mono display
+- Visualizes audio dynamics and signal shape
 
 ### Line Spectrum Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Line Spectrum mode uses Fast Fourier Transform (FFT) to analyze the audio signal and display its frequency content.
+Line Spectrum mode uses FFT to display real-time frequency analysis.
 
-- Shows the frequency spectrum of the audio signal in real-time
-- Displays frequency bands from low to high across the display width
-- Uses logarithmic scaling for better representation of human hearing
-- Includes temporal smoothing to reduce visual flicker
-- Provides insight into the tonal balance and frequency distribution of your audio
-
-To activate Line Spectrum mode, press the :key[KIT] button while the visualizer is active.
+- Shows frequency spectrum across the display width (low to high)
+- Uses logarithmic scaling optimized for human hearing
+- Applies temporal smoothing to reduce flicker
+- Reveals tonal balance and frequency distribution
 
 ### MIDI Piano Roll Mode <Badge text="c1.3 Feature" variant="tip" />
 
-MIDI Piano Roll mode displays a real-time piano roll visualization of incoming MIDI notes. The visualization shows note on/off events as they happen, creating a dynamic representation of MIDI activity.
+MIDI Piano Roll mode displays real-time MIDI note activity as a piano roll.
 
-- Shows incoming MIDI notes as horizontal bars across the keyboard
-- Note velocity is represented by bar brightness/intensity
-- Provides real-time feedback for MIDI input and sequencing
-- Helps visualize MIDI note patterns and timing
-- Useful for monitoring MIDI input from external devices or internal sequencing
-
-To activate MIDI Piano Roll mode, press the :key[MIDI] button while the visualizer is active.
+- Shows incoming and outgoing MIDI notes as vertical bars that scroll down the screen
+- Visualizes note patterns, timing, and polyphony
+- Monitors MIDI input/output from external devices or internal sequencing
 
 ### Bar Spectrum Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Bar Spectrum mode displays the audio signal across 16 frequency bands, similar to a graphic equalizer.
+Bar Spectrum mode displays audio across 16 frequency bands like a graphic equalizer.
 
-- Shows 16 frequency bands spanning the audible spectrum
-- Each bar represents the energy in that frequency range
-- Includes peak indicators that decay over time
-- Uses temporal smoothing for stable visualization
-- Helps visualize the frequency response and balance of your mix
-
-To activate Bar Spectrum mode, press the :key[MIDI] button while the visualizer is active.
+- Shows 16 bars representing frequency band energy
+- Includes peak indicators with decay
+- Applies temporal smoothing for stability
+- Visualizes frequency response and mix balance
 
 ### Stereo Line Spectrum Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Stereo Line Spectrum mode uses Fast Fourier Transform (FFT) to analyze the audio signal and display its frequency content in a horizontal mirrored layout with true stereo processing.
+Stereo Line Spectrum mode displays frequency analysis in a horizontal mirrored layout with true stereo processing.
 
-- Shows the frequency spectrum of the audio signal in real-time with horizontal orientation
-- Displays frequency bands from low (bottom) to high (top) along the display height
-- Processes left and right audio channels separately for accurate stereo representation
+- Shows real-time frequency spectrum with horizontal orientation
+- Frequency bands from low (bottom) to high (top) along display height
+- Processes left and right channels separately
 - Uses logarithmic scaling optimized for horizontal display
-- Includes temporal smoothing to reduce visual flicker
-- Provides insight into the tonal balance and frequency distribution of your stereo audio
-
-To activate Stereo Line Spectrum mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
+- Applies temporal smoothing to reduce flicker
 
 ### Stereo Bar Spectrum Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Stereo Bar Spectrum mode displays the audio signal across 8 frequency bands in a horizontal mirrored equalizer layout with true stereo processing.
+Stereo Bar Spectrum mode displays 8 frequency bands in a horizontal mirrored equalizer layout with true stereo processing.
 
-- Shows 8 frequency bands spanning the audible spectrum in horizontal orientation
-- Each bar represents the energy in that frequency range for both left and right channels
-- Processes stereo audio with separate analysis for left and right channels
-- Includes peak indicators that decay over time
-- Uses temporal smoothing for stable visualization
-- Helps visualize the frequency response and balance of your stereo mix in a horizontal layout
-
-To activate Stereo Bar Spectrum mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
+- Shows 8 bars representing frequency band energy for left and right channels
+- Processes stereo audio with separate channel analysis
+- Includes peak indicators with decay
+- Applies temporal smoothing for stability
+- Visualizes stereo frequency response and balance
 
 ### Cube Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Cube mode displays a 3D wireframe cube that rotates and bounces in response to the audio signal.
+Cube mode displays a rotating 3D wireframe cube that responds to audio.
 
-- Shows a rotating 3D wireframe cube on screen
-- Rotation speed increases with higher frequency content (pitch)
-- Cube scale (bounce) responds to low frequency energy (punch)
-- Combines visual appeal with meaningful audio reactivity
-- Provides a unique, eye-catching visualization option
-
-To activate Cube mode, press the :key[CV] button while the visualizer is active.
-
-### Tunnel Mode <Badge text="c1.3 Feature" variant="tip" />
-
-Tunnel mode displays animated concentric rings that move toward the viewer, creating a tunnel effect. The rings are modulated by the audio waveform for organic visual motion.
-
-- Shows concentric wireframe rings moving toward the viewer
-- Ring movement speed synchronizes with the current tempo (BPM)
-- Rings wobble and breathe in response to audio waveform amplitude
-- Creates a dynamic tunnel effect that responds to both rhythm and dynamics
-- Provides a hypnotic, immersive visualization experience
-
-To activate Tunnel mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
-
-### Starfield Mode <Badge text="c1.3 Feature" variant="tip" />
-
-Starfield mode creates a continuous hyperspace journey with stars smoothly moving toward the viewer, simulating travel through deep space. Stars are distributed evenly across the field for a natural, immersive experience.
-
-- Shows 64 stars moving toward the viewer with strong perspective projection
-- Stars are evenly distributed across the entire viewing area (no center clustering)
-- Star movement speed synchronizes with the current tempo (BPM)
-- Subtle audio-reactive speed increases during loud passages
-- Stars vary in size based on depth, creating smooth parallax effect
-- Automatically pauses during silence to prevent flicker
-- Provides a hypnotic, space travel-like visualization experience
+- Rotation speed synchronized to current tempo (BPM)
+- Cube scale responds to low-frequency energy (bounce effect)
+- Combines visual appeal with audio-reactive animation
+- Provides unique, eye-catching 3D visualization
 
 ### Skyline Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Skyline mode creates a dynamic city skyline visualization with buildings that rise and fall in response to different frequency bands of the audio signal. A sun appears in the sky region, pulsing with the overall audio amplitude, while scrolling grid lines create a sense of motion.
+Skyline mode creates a dynamic city skyline with buildings responding to frequency bands.
 
-- Shows a city skyline with 8 mirrored buildings representing frequency bands
-- Buildings respond to audio frequency content - low frequencies at the sides, highs in the center
-- Sun in the sky region with horizontal stripes that pulse with audio amplitude
-- Scrolling grid lines move upward continuously, creating dynamic motion
-- Provides a unique urban landscape that reacts to your music's frequency content
-- Combines architectural elements with smooth audio-responsive animation
-
-To activate Skyline mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
+- Shows 8 mirrored buildings representing frequency bands
+- Low frequencies at sides, high frequencies in center
+- Scrolling grid lines create continuous upward motion
+- Features a stylized sun in the sky region
+- Combines urban aesthetics with audio-reactive animation
 
 ### Starfield Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Starfield mode creates a continuous hyperspace journey with stars smoothly moving toward the viewer, simulating travel through deep space. Stars are distributed evenly across the field for a natural, immersive experience.
+Starfield mode creates a hyperspace journey with stars moving toward the viewer.
 
-- Shows 64 stars moving toward the viewer with strong perspective projection
-- Stars are evenly distributed across the entire viewing area (no center clustering)
-- Star movement speed synchronizes with the current tempo (BPM)
-- Subtle audio-reactive speed increases during loud passages
-- Stars vary in size based on depth, creating smooth parallax effect
-- Automatically pauses during silence to prevent flicker
-- Provides a hypnotic, space travel-like visualization experience
-
-To activate Starfield mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
-
+- Shows 64 evenly distributed stars with perspective projection
+- Movement speed synchronized to current tempo (BPM)
+- Flying saucer circles at tempo-synchronized speed
+- Audio-reactive speed increases during loud passages
+- Stars vary in size by depth for parallax effect
+- Pauses during silence to prevent flicker
 ### Tunnel Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Tunnel mode displays animated concentric rings that move toward the viewer, creating a tunnel effect. The rings are modulated by the audio waveform for organic visual motion.
+Tunnel mode displays concentric rings moving toward the viewer in a tunnel effect.
 
-- Shows concentric wireframe rings moving toward the viewer
-- Ring movement speed synchronizes with the current tempo (BPM)
-- Rings wobble and breathe in response to audio waveform amplitude
-- Creates a dynamic tunnel effect that responds to both rhythm and dynamics
-- Provides a hypnotic, immersive visualization experience
-
-To activate Tunnel mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
+- Rings modulated by audio waveform for organic motion
+- Movement speed synchronized to current tempo (BPM)
+- Illumination timing responds to rhythm and dynamics
+- Creates hypnotic, immersive tunnel visualization
 
 ### Pulse Grid Mode <Badge text="c1.3 Feature" variant="tip" />
 
-Pulse Grid mode creates a mesmerizing mirrored frequency grid visualization with pulsing cells that respond to different frequency bands of the audio signal. The grid displays 16 frequency bands arranged in a 4×4 layout, mirrored horizontally across the display for visual symmetry.
+Pulse Grid mode creates a mirrored frequency grid with pulsing cells responding to audio.
 
-- Shows three mirrored 4×4 grids of pulsing cells representing frequency bands
-- Each 10×10 pixel cell responds to specific frequency ranges from low to high
-- Frequency bands arranged from bottom-left (low frequencies) to top-right (high frequencies)
-- Uses dithered brightness patterns to create smooth pulsing effects
-- Includes audio sensitivity detection to prevent flicker during silence
-- Provides a hypnotic, grid-based visualization that reacts to your music's frequency content
+- Shows three mirrored 4×4 grids of pulsing cells (16 frequency bands total)
+- Cells arranged from bottom-left (low) to top-right (high frequencies)
+- Uses dithered patterns for smooth pulsing effects
+- Includes silence detection to prevent flicker
 - Combines technical precision with organic visual flow
-
-To activate Pulse Grid mode, press the :key[CV] button while the visualizer is active (cycles through special visualizers).
 
 ## Hot Key Controls
 
@@ -221,11 +160,11 @@ When the visualizer is active (displaying on screen), you can switch between mod
 - :key[SYNTH] - Switch to Waveform mode
 - :key[KIT] - Switch to Line Spectrum mode
 - :key[MIDI] - Switch to MIDI Piano Roll mode
-- :key[CV] - Toggle to special visualizers. Returns to the last viewed special visualizer, or the first one if none viewed yet. Subsequent presses cycle through the available special visualizers
+- :key[CV] - Cycle through special visualizers (Bar Spectrum → Stereo Line Spectrum → Stereo Bar Spectrum → Cube → Skyline → Starfield → Tunnel → Pulse Grid)
 
 These mode changes are temporary for the current session and don't affect your community setting preference.
 
-You can also toggle the visualizer on or off independently using :key[Shift] + `LEVEL/PAN` mod button. This provides a quick way to enable the visualizer without needing to set up the VU meter conditions, and shows popup feedback indicating the current state.
+You can also toggle the visualizer on or off independently using :key[Shift] + `LEVEL/PAN` mod button, which shows popup feedback indicating the current state.
 
 ## Tips and Usage
 
@@ -233,6 +172,5 @@ You can also toggle the visualizer on or off independently using :key[Shift] + `
 - **Sound Design**: The Line Spectrum mode provides insight into the harmonic content of your sounds
 - **Troubleshooting**: The Waveform mode can help identify clipping or level issues
 - **Quick Mode Switching**: Use the hot keys to quickly compare different visualization perspectives
-- **Independent Access**: Use :key[Shift] + `LEVEL/PAN` mod button to quickly toggle the visualizer on or off without setting up VU meter conditions, perfect for quick visual checks during production
 
 The visualizer provides valuable visual feedback for your audio production workflow, making it easier to monitor and understand your sound in real-time.
