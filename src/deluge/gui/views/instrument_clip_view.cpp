@@ -6875,6 +6875,10 @@ void InstrumentClipView::graphicsRoutine() {
 			}
 		}
 	}
+
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded();
+
 	PadLEDs::setTickSquares(tickSquares, colours);
 }
 
