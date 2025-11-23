@@ -802,46 +802,6 @@ void View::modEncoderAction(int32_t whichModEncoder, int32_t offset) {
 	//  	return;
 	//  }
 
-	// If visualizer is active (VU meter mode) and level/pan knob is selected, use mod encoders to cycle visualizer
-	// modes
-	if (displayVUMeter && activeModControllableModelStack.modControllable
-	    && *activeModControllableModelStack.modControllable->getModKnobMode() == 0
-	    && deluge::hid::display::Visualizer::isEnabled()) {
-
-		// Cycle through visualizer modes based on encoder direction
-		uint32_t currentMode = deluge::hid::display::Visualizer::getMode();
-		uint32_t newMode = currentMode;
-
-		if (offset > 0) {
-			// Cycle to next mode
-			newMode = (currentMode + 1) % (RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll + 1);
-			// Skip OFF mode when cycling
-			if (newMode == RuntimeFeatureStateVisualizer::VisualizerOff) {
-				newMode = RuntimeFeatureStateVisualizer::VisualizerWaveform;
-			}
-		}
-		else if (offset < 0) {
-			// Cycle to previous mode
-			if (currentMode == RuntimeFeatureStateVisualizer::VisualizerWaveform) {
-				newMode = RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll;
-			}
-			else {
-				newMode = currentMode - 1;
-				// Skip OFF mode when cycling
-				if (newMode == RuntimeFeatureStateVisualizer::VisualizerOff) {
-					newMode = RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll;
-				}
-			}
-		}
-
-		if (newMode != currentMode) {
-			deluge::hid::display::Visualizer::setSessionMode(newMode);
-			display->displayPopup(deluge::hid::display::Visualizer::getModeDisplayName(newMode).data());
-			renderUIsForOled(); // Refresh OLED to show new visualizer mode
-		}
-		return;
-	}
-
 	if (activeModControllableModelStack.modControllable) {
 
 		bool noteTailsAllowedBefore;
