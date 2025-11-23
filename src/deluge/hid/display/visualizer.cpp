@@ -430,6 +430,9 @@ void Visualizer::sampleAudioForDisplay(std::span<StereoSample> renderingBuffer, 
 		updateSilenceTimer(renderingBuffer, numSamples, global_visualizer_last_audio_time);
 
 		sampleIntoBuffers(renderingBuffer, numSamples);
+
+		// Request visualizer update at 30fps
+		requestVisualizerUpdateIfNeeded();
 	}
 }
 
@@ -446,6 +449,9 @@ void Visualizer::sampleAudioForClipDisplay(std::span<StereoSample> renderingBuff
 			updateSilenceTimer(renderingBuffer, numSamples, clip_visualizer_last_audio_time);
 
 			sampleIntoBuffers(renderingBuffer, numSamples);
+
+			// Request visualizer update at 30fps
+			requestVisualizerUpdateIfNeeded();
 		}
 	}
 }
