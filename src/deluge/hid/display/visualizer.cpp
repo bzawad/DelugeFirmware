@@ -29,6 +29,7 @@
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
 #include "hid/display/display.h"
+#include "hid/display/oled.h"
 #include "hid/display/visualizer/visualizer_bar_spectrum.h"
 #include "hid/display/visualizer/visualizer_cube.h"
 #include "hid/display/visualizer/visualizer_line_spectrum.h"
@@ -244,6 +245,9 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 				display_visualizer = true;
 			}
 			renderVisualizer(canvas);
+			// Set permanent popup flag so tempo/key change/bars remaining show as popups instead of on display
+			extern bool drawnPermanentPopup;
+			drawnPermanentPopup = true;
 			return true;
 		}
 	}
