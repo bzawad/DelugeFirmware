@@ -825,6 +825,9 @@ void KeyboardScreen::displayOrLanguageChanged() {
 void KeyboardScreen::openedInBackground() {
 	getCurrentInstrumentClip()->onKeyboardScreen = true;
 
+	// Set current clip for visualizer when entering keyboard screen
+	deluge::hid::display::Visualizer::trySetClipForVisualizer(getCurrentInstrumentClip());
+
 	// Ensure scroll values are calculated in bounds
 	layout_list[getCurrentInstrumentClip()->keyboardState.currentLayout]->handleHorizontalEncoder(0, false, pressedPads,
 	                                                                                              xEncoderActive);
@@ -975,6 +978,9 @@ void KeyboardScreen::graphicsRoutine() {
 	}
 
 	keyboardTickSquares[kDisplayHeight - 1] = newTickSquare;
+
+	// Request OLED refresh for visualizer if active (ensures continuous updates)
+	deluge::hid::display::Visualizer::requestVisualizerUpdateIfNeeded();
 
 	PadLEDs::setTickSquares(keyboardTickSquares, colours);
 }
