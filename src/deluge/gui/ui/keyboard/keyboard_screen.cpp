@@ -28,6 +28,7 @@
 #include "gui/views/view.h"
 #include "hid/buttons.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "model/action/action_logger.h"

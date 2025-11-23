@@ -40,6 +40,7 @@
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
 #include "hid/display/seven_segment.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
@@ -406,6 +407,8 @@ void readButtonsAndPadsOnce() {
 }
 
 void setUIForLoadedSong(Song* song) {
+	// Reset visualizer state when loading a new song
+	deluge::hid::display::Visualizer::resetSessionMode();
 
 	UI* newUI;
 	Clip* currentClip = song->getCurrentClip();
