@@ -29,6 +29,7 @@
 #include "gui/views/instrument_clip_view.h"
 #include "gui/views/view.h"
 #include "hid/buttons.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "io/midi/midi_engine.h"
 #include "io/midi/midi_transpose.h"
@@ -107,6 +108,11 @@ void InstrumentClipMinder::redrawNumericDisplay() {
 }
 
 void InstrumentClipMinder::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	// Check if visualizer should be displayed in clip view
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
 	view.displayOutputName(getCurrentOutput(), false, getCurrentClip());
 }
 

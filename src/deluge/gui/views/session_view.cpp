@@ -45,6 +45,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -802,6 +803,10 @@ startHoldingDown:
 						selectedClipTimePressed = AudioEngine::audioSampleTimer;
 						view.setActiveModControllableTimelineCounter(clip);
 						view.displayOutputName(clip->output, true, clip);
+
+						// Set current clip for visualizer when holding clip in session view
+						// This allows visualizer to show clip-specific waveform when clip is held
+						deluge::hid::display::Visualizer::trySetClipForVisualizer(clip);
 					}
 				}
 
@@ -1023,6 +1028,11 @@ justEndClipPress:
 }
 
 void SessionView::clipPressEnded() {
+	// Clear clip visualizer when clip press ends (return to global visualizer)
+	if (isUIModeActive(UI_MODE_CLIP_PRESSED_IN_SONG_VIEW)) {
+		deluge::hid::display::Visualizer::clearClipForVisualizer();
+	}
+
 	// End stuttering since this can also end selection
 	if (isUIModeActive(UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) && isUIModeActive(UI_MODE_STUTTERING)) {
 		((ModControllableAudio*)view.activeModControllableModelStack.modControllable)
@@ -1850,6 +1860,11 @@ extern char loopsRemainingText[];
 void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	if (stemExport.processStarted) {
 		stemExport.displayStemExportProgressOLED(StemExportType::CLIP);
+		return;
+	}
+
+	// Check if visualizer should be displayed (same conditions as VU meter)
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
 		return;
 	}
 

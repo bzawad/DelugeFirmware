@@ -40,6 +40,7 @@
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
 #include "hid/display/seven_segment.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
@@ -90,8 +91,8 @@ extern uint8_t currentlyAccessingCard;
 
 extern "C" void disk_timerproc(UINT msPassed);
 
-Song* currentSong = NULL;
-Song* preLoadedSong = NULL;
+Song* currentSong = nullptr;
+Song* preLoadedSong = nullptr;
 
 bool sdRoutineLock = false;
 
@@ -135,6 +136,7 @@ void inputRoutine() {
 	if (micNow != AudioEngine::micPluggedIn) {
 		D_PRINT("mic %d", micNow);
 		AudioEngine::micPluggedIn = micNow;
+		renderUIsForOled();
 	}
 
 	if (!ALLOW_SPAM_MODE) {
@@ -149,6 +151,7 @@ void inputRoutine() {
 	if (lineInNow != AudioEngine::lineInPluggedIn) {
 		D_PRINTLN("line in %d", lineInNow);
 		AudioEngine::lineInPluggedIn = lineInNow;
+		renderUIsForOled();
 	}
 
 	// Battery voltage

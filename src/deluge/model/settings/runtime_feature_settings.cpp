@@ -24,7 +24,8 @@
 #include <cstring>
 #include <string_view>
 
-#define RUNTIME_FEATURE_SETTINGS_FILE "CommunityFeatures.XML"
+#define SETTINGS_FOLDER "SETTINGS"
+#define RUNTIME_FEATURE_SETTINGS_FILE "SETTINGS/CommunityFeatures.XML"
 #define TAG_RUNTIME_FEATURE_SETTINGS "runtimeFeatureSettings"
 #define TAG_RUNTIME_FEATURE_SETTING "setting"
 #define TAG_RUNTIME_FEATURE_SETTING_ATTR_NAME "name"
@@ -32,7 +33,7 @@
 
 /// Unknown Settings container
 struct UnknownSetting {
-	std::string_view name;
+	std::string name;
 	uint32_t value;
 };
 
@@ -97,6 +98,64 @@ static void SetupEmulatedDisplaySetting(RuntimeFeatureSetting& setting, deluge::
 	    {
 	        .displayName = have_oled ? "7SEG" : "OLED",
 	        .value = RuntimeFeatureStateEmulatedDisplay::OnBoot,
+	    },
+	};
+}
+
+static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n::String displayName,
+                                   std::string_view xmlName, RuntimeFeatureStateVisualizer def) {
+	setting.displayName = displayName;
+	setting.xmlName = xmlName;
+	setting.value = static_cast<uint32_t>(def);
+
+	setting.options = {
+	    {
+	        .displayName = "OFF",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerOff,
+	    },
+	    {
+	        .displayName = "WAVEFORM",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerWaveform,
+	    },
+	    {
+	        .displayName = "LINE SPECTRUM",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerLineSpectrum,
+	    },
+	    {
+	        .displayName = "BAR SPECTRUM",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerBarSpectrum,
+	    },
+	    {
+	        .displayName = "CUBE",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerCube,
+	    },
+	    {
+	        .displayName = "STEREO LINE SPECTRUM",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerStereoLineSpectrum,
+	    },
+	    {
+	        .displayName = "STEREO BAR SPECTRUM",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerStereoBarSpectrum,
+	    },
+	    {
+	        .displayName = "TUNNEL",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerTunnel,
+	    },
+	    {
+	        .displayName = "STARFIELD",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerStarfield,
+	    },
+	    {
+	        .displayName = "SKYLINE",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerSkyline,
+	    },
+	    {
+	        .displayName = "PULSE GRID",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerPulseGrid,
+	    },
+	    {
+	        .displayName = "MIDI PIANO ROLL",
+	        .value = RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll,
 	    },
 	};
 }
@@ -195,6 +254,10 @@ void RuntimeFeatureSettings::init() {
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGridViewLoopPads],
 	                  STRING_FOR_COMMUNITY_FEATURE_GRID_VIEW_LOOP_PADS, "enableGridViewLoopPads",
 	                  RuntimeFeatureStateToggle::Off);
+
+	// Visualizer
+	SetupVisualizerSetting(settings[RuntimeFeatureSettingType::Visualizer], STRING_FOR_COMMUNITY_FEATURE_VISUALIZER,
+	                       "visualizer", RuntimeFeatureStateVisualizer::VisualizerWaveform);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {
