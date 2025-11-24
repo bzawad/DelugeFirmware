@@ -2416,6 +2416,9 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 				if (visualizer_active) {
 					// Use persistent overlay popup for active visualizer users to avoid clearing the visualizer
 					display->popupText(popupMsg.c_str(), PopupType::GENERAL);
+					// Set a safety timeout to auto-cancel the bars remaining popup if conditions change
+					// Timeout after 10 seconds to allow for longer launch delays and processing time
+					uiTimerManager.setTimer(TimerName::DISPLAY, 10000);
 				}
 				else {
 					// Direct rendering for non-active visualizer users (original behavior)
