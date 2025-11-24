@@ -288,6 +288,11 @@ void Visualizer::requestVisualizerUpdateIfNeeded(View& view) {
 }
 
 void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled) {
+	// Don't update visualizer in performance mode
+	if (getRootUI() == &performanceView) {
+		return;
+	}
+
 	// Check if visualizer should be active (VU meter conditions OR toggle conditions)
 	if (visualizer_enabled && (displayVUMeter || visualizer_toggle_enabled)) {
 		// Enable visualizer if conditions are met
