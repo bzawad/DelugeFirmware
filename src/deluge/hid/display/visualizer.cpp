@@ -25,6 +25,7 @@
 #include "gui/views/arranger_view.h"
 #include "gui/views/automation_view.h"
 #include "gui/views/instrument_clip_view.h"
+#include "gui/views/performance_session_view.h"
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
 #include "hid/display/display.h"
@@ -189,11 +190,10 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 		return false;
 	}
 
-	// Don't show visualizer in performance mode
-	// TODO: Re-enable when performance view exists in 1.2
-	// if (getRootUI() == &performanceView) {
-	//	return false;
-	// }
+	// Don't show visualizer in performance session view mode (within session/arranger views)
+	if (getRootUI() == &performanceSessionView) {
+		return false;
+	}
 
 	// Check if visualizer feature is enabled in Waveform, Spectrum, or Equalizer mode in runtime settings
 	if (visualizer_enabled) {
@@ -309,11 +309,10 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 		return;
 	}
 
-	// Don't update visualizer in performance mode
-	// TODO: Re-enable when performance view exists in 1.2
-	// if (getRootUI() == &performanceView) {
-	//	return;
-	// }
+	// Don't update visualizer in performance session view mode (within session/arranger views)
+	if (getRootUI() == &performanceSessionView) {
+		return;
+	}
 
 	// Check if visualizer should be active (VU meter conditions OR toggle conditions)
 	if (visualizer_enabled && (displayVUMeter || visualizer_toggle_enabled)) {
