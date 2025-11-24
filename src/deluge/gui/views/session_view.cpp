@@ -2410,12 +2410,29 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 				popupMsg.appendInt(quarterNotesRemaining);
 			}
 			if (display->haveOLED() && !ephemeral) {
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
-				deluge::hid::display::OLED::sendMainImage();
+				// Check if visualizer is enabled AND actively running
+				bool visualizer_active = deluge::hid::display::Visualizer::isActive(view.displayVUMeter);
+
+				if (visualizer_active) {
+					// Use persistent overlay popup for active visualizer users to avoid clearing the visualizer
+					display->popupText(popupMsg.c_str(), PopupType::GENERAL);
+				}
+				else {
+					// Direct rendering for non-active visualizer users (original behavior)
+					deluge::hid::display::OLED::clearMainImage();
+					deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
+					deluge::hid::display::OLED::sendMainImage();
+				}
 			}
 			else {
 				display->displayPopup(popupMsg.c_str(), 1, true);
+			}
+		}
+		else {
+			// If no popup was shown (sixteenthNotesRemaining <= 0), but visualizer is active,
+			// cancel any lingering popup from previous calls
+			if (deluge::hid::display::Visualizer::isActive(view.displayVUMeter)) {
+				display->cancelPopup();
 			}
 		}
 	}
