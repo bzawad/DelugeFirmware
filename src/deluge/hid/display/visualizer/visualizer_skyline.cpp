@@ -251,7 +251,7 @@ void drawSun(oled_canvas::Canvas& canvas, int32_t min_x, int32_t max_x, int32_t 
 		x1 = std::max(min_x, std::min(x1, max_x));
 		x2 = std::max(min_x, std::min(x2, max_x));
 		if (x2 > x1) {
-			drawLine(canvas, x1, y, x2, y);
+			canvas.drawLine(x1, y, x2, y);
 		}
 	}
 }
@@ -308,7 +308,7 @@ void drawBuildings(oled_canvas::Canvas& canvas, int32_t sky_top_boundary, int32_
 			else {
 				// Solid fill
 				for (int32_t y = building_top; y <= building_bottom; y++) {
-					drawLine(canvas, x1, y, x2, y);
+					canvas.drawLine(x1, y, x2, y);
 				}
 			}
 		}
@@ -333,7 +333,7 @@ void drawBuildings(oled_canvas::Canvas& canvas, int32_t sky_top_boundary, int32_
 			else {
 				// Solid fill
 				for (int32_t y = building_top; y <= building_bottom; y++) {
-					drawLine(canvas, x1, y, x2, y);
+					canvas.drawLine(x1, y, x2, y);
 				}
 			}
 		}
@@ -386,7 +386,7 @@ void drawPerspectiveRoad(oled_canvas::Canvas& canvas, int32_t region_top, int32_
 			x1 = 0;
 		if (x2 >= OLED_MAIN_WIDTH_PIXELS)
 			x2 = OLED_MAIN_WIDTH_PIXELS - 1;
-		drawLine(canvas, x1, y, x2, y);
+		canvas.drawLine(x1, y, x2, y);
 	}
 }
 

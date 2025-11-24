@@ -200,9 +200,9 @@ void renderVisualizerStereoLineSpectrum(oled_canvas::Canvas& canvas) {
 		// Draw line from previous point to current point (both left and right sides)
 		if (!is_first_point && last_y >= 0 && last_y != y) {
 			// Draw left side line
-			drawLine(canvas, last_left_x, last_y, left_x, y);
+			canvas.drawLine(last_left_x, last_y, left_x, y);
 			// Draw right side line (mirrored)
-			drawLine(canvas, last_right_x, last_y, right_x, y);
+			canvas.drawLine(last_right_x, last_y, right_x, y);
 		}
 		else if (is_first_point) {
 			// First point, just draw pixels

@@ -111,6 +111,50 @@ drawSolid:
 	}
 }
 
+void Canvas::drawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const DrawLineOptions& options) {
+	const bool steep = abs(y1 - y0) > abs(x1 - x0);
+	if (steep) {
+		std::swap(x0, y0);
+		std::swap(x1, y1);
+	}
+	if (x0 > x1) {
+		std::swap(x0, x1);
+		std::swap(y0, y1);
+	}
+
+	int32_t dx = x1 - x0;
+	int32_t dy = abs(y1 - y0);
+	int32_t error = dx / 2;
+	int32_t y = y0;
+	int32_t y_step = y0 < y1 ? 1 : -1;
+
+	for (int32_t x = x0; x <= x1; x++) {
+		int32_t actual_x = steep ? y : x;
+		int32_t actual_y = steep ? x : y;
+
+		if (options.max_x.has_value() && actual_x > options.max_x.value()) {
+			return;
+		}
+		if (!options.min_x.has_value() || actual_x >= options.min_x.value()) {
+			drawPixel(actual_x, actual_y);
+
+			if (options.thick) {
+				drawPixel(steep ? actual_x + 1 : actual_x, steep ? actual_y : actual_y - 1);
+			}
+
+			if (options.point_callback.has_value()) {
+				options.point_callback.value()({actual_x, actual_y});
+			}
+		}
+
+		error -= dy;
+		if (error < 0) {
+			y += y_step;
+			error += dx;
+		}
+	}
+}
+
 void Canvas::drawRectangle(int32_t minX, int32_t minY, int32_t maxX, int32_t maxY) {
 	drawVerticalLine(minX, minY, maxY);
 	drawVerticalLine(maxX, minY, maxY);

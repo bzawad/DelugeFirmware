@@ -21,10 +21,30 @@
 #include "definitions.h"
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <optional>
 #include <string_view>
 
 namespace deluge::hid::display {
 class OLED;
+
+enum BorderRadius : uint8_t {
+	SMALL = 0, //< 1px
+	BIG = 1    //< 2px
+};
+
+struct Point {
+	int32_t x;
+	int32_t y;
+	bool operator==(const Point& other) const noexcept { return x == other.x && y == other.y; }
+};
+
+struct DrawLineOptions {
+	bool thick{false};
+	std::optional<uint8_t> min_x{std::nullopt};
+	std::optional<uint8_t> max_x{std::nullopt};
+	std::optional<std::function<void(Point)>> point_callback{std::nullopt};
+};
 
 namespace oled_canvas {
 class Canvas {
@@ -72,6 +92,14 @@ public:
 	/// @param startY Y coordinate of the line, inclusive
 	/// @param endY Y coordinate of the line, inclusive
 	void drawVerticalLine(int32_t pixelX, int32_t startY, int32_t endY);
+
+	/// Draw a line using Bresenham algorithm
+	/// @param x0 Start X coordinate of the line
+	/// @param y0 Start Y coordinate of the line
+	/// @param x1 End X coordinate of the line
+	/// @param y1 End Y coordinate of the line
+	/// @param options Draw options
+	void drawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const DrawLineOptions& options = {});
 
 	/// Draw a 1-px wide rectangle.
 	///

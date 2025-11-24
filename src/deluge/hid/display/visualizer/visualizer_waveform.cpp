@@ -174,7 +174,7 @@ void renderVisualizerWaveform(oled_canvas::Canvas& canvas) {
 		// Draw line from previous point to current point
 		// Skip connecting first point to avoid vertical line from previous frame
 		if (!is_first_point && last_x >= 0 && last_x != x) {
-			drawLine(canvas, last_x, last_y, x, y);
+			canvas.drawLine(last_x, last_y, x, y);
 		}
 		else if (is_first_point) {
 			// First point of this frame, just draw a pixel (don't connect to previous frame)

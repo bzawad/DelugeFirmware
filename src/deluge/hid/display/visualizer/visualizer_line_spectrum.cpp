@@ -172,7 +172,7 @@ void renderVisualizerLineSpectrum(oled_canvas::Canvas& canvas) {
 
 		// Draw line from previous point to current point
 		if (!is_first_point && last_x >= 0 && last_x != x) {
-			drawLine(canvas, last_x, last_y, x, y);
+			canvas.drawLine(last_x, last_y, x, y);
 		}
 		else if (is_first_point) {
 			// First point, just draw a pixel

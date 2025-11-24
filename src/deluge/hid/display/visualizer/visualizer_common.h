@@ -58,8 +58,4 @@ float applyVisualizerCompression(float amplitude, float frequency);
 // Compute current audio amplitude from recent samples (peak detection)
 float computeCurrentAmplitude();
 
-// Draw a line using Bresenham's line algorithm with drawPixel
-// This replaces the missing drawLine method in OLED canvas for 1.2 compatibility
-void drawLine(deluge::hid::display::oled_canvas::Canvas& canvas, int32_t x1, int32_t y1, int32_t x2, int32_t y2);
-
 } // namespace deluge::hid::display

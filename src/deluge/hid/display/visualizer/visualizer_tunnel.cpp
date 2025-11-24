@@ -259,19 +259,19 @@ void renderVisualizerTunnel(oled_canvas::Canvas& canvas) {
 		// Draw connecting lines to previous ring if it exists
 		if (prev_left >= 0 && prev_top >= 0 && prev_right >= 0 && prev_bottom >= 0) {
 			// Draw tunnel walls - connect corners of adjacent rings
-			drawLine(canvas, prev_left, prev_top, curr_left, curr_top);         // top-left diagonal
-			drawLine(canvas, prev_right, prev_top, curr_right, curr_top);       // top-right diagonal
-			drawLine(canvas, prev_left, prev_bottom, curr_left, curr_bottom);   // bottom-left diagonal
-			drawLine(canvas, prev_right, prev_bottom, curr_right, curr_bottom); // bottom-right diagonal
+			canvas.drawLine(prev_left, prev_top, curr_left, curr_top);         // top-left diagonal
+			canvas.drawLine(prev_right, prev_top, curr_right, curr_top);       // top-right diagonal
+			canvas.drawLine(prev_left, prev_bottom, curr_left, curr_bottom);   // bottom-left diagonal
+			canvas.drawLine(prev_right, prev_bottom, curr_right, curr_bottom); // bottom-right diagonal
 		}
 
 		// Draw the ring rectangle (special case for ring 0 which may be at z=0)
 		if (curr_right > curr_left && curr_bottom > curr_top && curr_right - curr_left > 2 && curr_bottom - curr_top > 2
 		    && (i == 0 || rings[i].z > kNearClippingPlane)) {
-			drawLine(canvas, curr_left, curr_top, curr_right, curr_top);
-			drawLine(canvas, curr_right, curr_top, curr_right, curr_bottom);
-			drawLine(canvas, curr_right, curr_bottom, curr_left, curr_bottom);
-			drawLine(canvas, curr_left, curr_bottom, curr_left, curr_top);
+			canvas.drawLine(curr_left, curr_top, curr_right, curr_top);
+			canvas.drawLine(curr_right, curr_top, curr_right, curr_bottom);
+			canvas.drawLine(curr_right, curr_bottom, curr_left, curr_bottom);
+			canvas.drawLine(curr_left, curr_bottom, curr_left, curr_top);
 		}
 
 		// Store current ring corners for next iteration

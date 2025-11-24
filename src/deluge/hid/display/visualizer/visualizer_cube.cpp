@@ -279,7 +279,7 @@ void renderCube(oled_canvas::Canvas& canvas, float rotation_angle, float scale, 
 		y2 = std::max(static_cast<int32_t>(0), std::min(y2, k_max_y));
 
 		// Draw the edge
-		drawLine(canvas, x1, y1, x2, y2);
+		canvas.drawLine(x1, y1, x2, y2);
 	}
 
 	// Mark OLED as changed
