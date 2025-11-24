@@ -40,6 +40,7 @@
 #include "hid/display/visualizer/visualizer_stereo_line_spectrum.h"
 #include "hid/display/visualizer/visualizer_tunnel.h"
 #include "hid/display/visualizer/visualizer_waveform.h"
+#include "io/debug/log.h"
 #include "modulation/params/param.h"
 #include <atomic>
 
@@ -295,6 +296,14 @@ void Visualizer::requestVisualizerUpdateIfNeeded(View& view) {
 }
 
 void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled) {
+	// CRITICAL OPTIMIZATION: Early exit if not time to update yet
+	// This minimizes overhead on the audio thread (called ~2000 times/second in 1.2)
+	// With more channels playing, the audio thread is busier and this check must be fast
+	uint32_t samples_since_last_update = AudioEngine::audioSampleTimer - last_visualizer_update_time;
+	if (samples_since_last_update < kTargetVisualizerUpdateInterval) {
+		return; // Not time to update - exit immediately with minimal overhead
+	}
+
 	// Don't update visualizer in automation view (including overview and editor modes)
 	if (getRootUI() == &automationView) {
 		return;
@@ -339,14 +348,9 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 			display_visualizer = true;
 		}
 
-		// All visualizers use 30fps
-
-		// Request OLED update at 30fps
-		visualizer_frame_counter++;
-		if (visualizer_frame_counter >= kFrameSkip) {
-			visualizer_frame_counter = 0;
-			renderUIsForOled();
-		}
+		// All visualizers use 30fps - update OLED now (we already checked time above)
+		last_visualizer_update_time = AudioEngine::audioSampleTimer;
+		renderUIsForOled();
 		return;
 	}
 	// Disable visualizer if conditions aren't met
