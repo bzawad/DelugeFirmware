@@ -134,24 +134,12 @@ static void SetupVisualizerSetting(RuntimeFeatureSetting& setting, deluge::l10n:
 	        .value = RuntimeFeatureStateVisualizer::VisualizerStereoLineSpectrum,
 	    },
 	    {
-	        .displayName = "STEREO BAR SPECTRUM",
-	        .value = RuntimeFeatureStateVisualizer::VisualizerStereoBarSpectrum,
-	    },
-	    {
-	        .displayName = "TUNNEL",
-	        .value = RuntimeFeatureStateVisualizer::VisualizerTunnel,
-	    },
-	    {
 	        .displayName = "STARFIELD",
 	        .value = RuntimeFeatureStateVisualizer::VisualizerStarfield,
 	    },
 	    {
 	        .displayName = "SKYLINE",
 	        .value = RuntimeFeatureStateVisualizer::VisualizerSkyline,
-	    },
-	    {
-	        .displayName = "PULSE GRID",
-	        .value = RuntimeFeatureStateVisualizer::VisualizerPulseGrid,
 	    },
 	    {
 	        .displayName = "MIDI PIANO ROLL",
