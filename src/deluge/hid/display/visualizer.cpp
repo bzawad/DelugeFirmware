@@ -184,8 +184,8 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, View& 
 /// Check if visualizer should be rendered and render it if conditions are met
 bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool displayVUMeter, bool visualizer_enabled,
                                              ModControllable* modControllable, int32_t mod_knob_mode) {
-	// Don't show visualizer in automation overview mode
-	if (getRootUI() == &automationView && automationView.onAutomationOverview()) {
+	// Don't show visualizer in automation view (including overview and editor modes)
+	if (getRootUI() == &automationView) {
 		return false;
 	}
 
@@ -295,6 +295,11 @@ void Visualizer::requestVisualizerUpdateIfNeeded(View& view) {
 }
 
 void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled) {
+	// Don't update visualizer in automation view (including overview and editor modes)
+	if (getRootUI() == &automationView) {
+		return;
+	}
+
 	// Don't update visualizer in performance mode
 	if (getRootUI() == &performanceView) {
 		return;
@@ -486,9 +491,9 @@ void Visualizer::sampleAudioForClipDisplay(std::span<StereoSample> renderingBuff
 		// Check if we're in clip context and have valid clip type
 		bool isSynthOrKitClip = (clip->type == ClipType::INSTRUMENT
 		                         && (clip->output->type == OutputType::SYNTH || clip->output->type == OutputType::KIT));
-		bool isNotInAutomationOverview = !(getRootUI() == &automationView && automationView.onAutomationOverview());
+		bool isNotInAutomationView = !(getRootUI() == &automationView);
 
-		if (isInClipContext() && isSynthOrKitClip && isNotInAutomationOverview) {
+		if (isInClipContext() && isSynthOrKitClip && isNotInAutomationView) {
 			updateSilenceTimer(renderingBuffer, numSamples, clip_visualizer_last_audio_time);
 
 			sampleIntoBuffers(renderingBuffer, numSamples);
@@ -546,8 +551,8 @@ bool Visualizer::isClipMode() {
 		return false;
 	}
 
-	// Don't show visualizer in automation overview mode
-	if (getRootUI() == &automationView && automationView.onAutomationOverview()) {
+	// Don't show visualizer in automation view (including overview and editor modes)
+	if (getRootUI() == &automationView) {
 		return false;
 	}
 
