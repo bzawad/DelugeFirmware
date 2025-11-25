@@ -296,14 +296,6 @@ void Visualizer::requestVisualizerUpdateIfNeeded(View& view) {
 }
 
 void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visualizer_enabled) {
-	// CRITICAL OPTIMIZATION: Early exit if not time to update yet
-	// This minimizes overhead on the audio thread (called ~2000 times/second in 1.2)
-	// With more channels playing, the audio thread is busier and this check must be fast
-	uint32_t samples_since_last_update = AudioEngine::audioSampleTimer - last_visualizer_update_time;
-	if (samples_since_last_update < kTargetVisualizerUpdateInterval) {
-		return; // Not time to update - exit immediately with minimal overhead
-	}
-
 	// Don't update visualizer in automation view (including overview and editor modes)
 	if (getRootUI() == &automationView) {
 		return;
@@ -313,6 +305,13 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 	if (getRootUI() == &performanceSessionView) {
 		return;
 	}
+
+	// Simple frame counter for 30fps visualizer updates
+	visualizer_frame_counter++;
+	if (visualizer_frame_counter < kFrameSkip) {
+		return;
+	}
+	visualizer_frame_counter = 0;
 
 	// Check if visualizer should be active (VU meter conditions OR toggle conditions)
 	if (visualizer_enabled && (displayVUMeter || visualizer_toggle_enabled)) {
@@ -347,8 +346,7 @@ void Visualizer::requestVisualizerUpdateIfNeeded(bool displayVUMeter, bool visua
 			display_visualizer = true;
 		}
 
-		// All visualizers use 30fps - update OLED now (we already checked time above)
-		last_visualizer_update_time = AudioEngine::audioSampleTimer;
+		// All visualizers use 30fps - update OLED now
 		renderUIsForOled();
 		return;
 	}

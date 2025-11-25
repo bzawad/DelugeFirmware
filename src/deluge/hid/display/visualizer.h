@@ -283,10 +283,7 @@ public:
 	static constexpr uint32_t kQ31ToQ15Shift = 16; // Convert Q31 → Q15 (15 fractional bits)
 
 	/// Frame rate constants
-	static constexpr uint32_t kFrameSkip =
-	    2; // Frame skip for 30fps visualizer updates (legacy, kept for compatibility)
-	static constexpr uint32_t kTargetVisualizerUpdateInterval = 44100 / 60; // ~735 samples for 60fps (TEST)
-	inline static uint32_t last_visualizer_update_time = 0;
+	static constexpr uint32_t kFrameSkip = 2; // Frame skip for 30fps visualizer updates
 
 	/// Visualizer sample buffer and related variables
 	static constexpr size_t kVisualizerBufferSize = 512;
