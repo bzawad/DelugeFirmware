@@ -156,6 +156,15 @@ GlobalEffectableForClip::GlobalEffectableForClip() {
 		compressor.reset();
 	}
 
+	// Sample audio for clip-specific visualizer after all effects processing including master volume
+	// This ensures the visualizer reflects the actual audible output level
+	if (modelStack && modelStack->getTimelineCounter() && deluge::hid::display::Visualizer::isToggleEnabled()) {
+		// TimelineCounter is guaranteed to be a Clip in this context (GlobalEffectableForClip)
+		Clip* clip = static_cast<Clip*>(modelStack->getTimelineCounter());
+		deluge::hid::display::Visualizer::sampleAudioForClipDisplay(
+		    std::span{globalEffectableBuffer, static_cast<size_t>(numSamples)}, numSamples, clip);
+	}
+
 	addAudio(globalEffectableBuffer, outputBuffer, numSamples);
 
 	postReverbVolumeLastTime = postReverbVolume;
@@ -177,7 +186,8 @@ GlobalEffectableForClip::GlobalEffectableForClip() {
 	if (modelStack && modelStack->getTimelineCounter() && deluge::hid::display::Visualizer::isToggleEnabled()) {
 		// TimelineCounter is guaranteed to be a Clip in this context (GlobalEffectableForClip)
 		Clip* clip = static_cast<Clip*>(modelStack->getTimelineCounter());
-		deluge::hid::display::Visualizer::sampleAudioForClipDisplay(std::span{globalEffectableBuffer, static_cast<size_t>(numSamples)}, numSamples, clip);
+		deluge::hid::display::Visualizer::sampleAudioForClipDisplay(
+		    std::span{globalEffectableBuffer, static_cast<size_t>(numSamples)}, numSamples, clip);
 	}
 }
 
