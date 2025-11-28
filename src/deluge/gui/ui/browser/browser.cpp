@@ -1342,10 +1342,10 @@ void Browser::currentFileDeleted() {
 void Browser::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) {
 	canvas.drawScreenTitle(title);
 
-	int32_t textStartX = 14;
-	int32_t iconStartX = 1;
+	int32_t textStartX = 15;
+	int32_t iconStartX = 2;
 	if (FlashStorage::accessibilityMenuHighlighting == MenuHighlighting::NO_INVERSION) {
-		textStartX += kTextSpacingX;
+		textStartX += kTextSpacingX - 1;
 		iconStartX = kTextSpacingX;
 	}
 
