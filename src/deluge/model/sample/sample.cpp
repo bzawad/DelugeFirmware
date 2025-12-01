@@ -28,6 +28,7 @@
 #include "storage/audio/audio_file_manager.h"
 #include "storage/cluster/cluster.h"
 #include "storage/multi_range/multisample_range.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <new>
@@ -1812,4 +1813,171 @@ void Sample::steal(char const* errorCode) {
 	}
 #endif
 	audioFileManager.sampleFiles.erase(&this->filePath);
+}
+
+// Read a single sample value at the specified sample position
+// Returns true if successful, false if sample data not available
+bool Sample::readSampleValue(int32_t samplePos, float* leftValue, float* rightValue) {
+	if (samplePos < 0 || samplePos >= (int32_t)lengthInSamples) {
+		return false;
+	}
+
+	int32_t bytesPerSample = byteDepth * numChannels;
+	int64_t bytePos = (int64_t)samplePos * bytesPerSample + audioDataStartPosBytes;
+
+	int32_t clusterIndex = bytePos >> Cluster::size_magnitude;
+	int32_t bytePosWithinCluster = bytePos & (Cluster::size - 1);
+
+	if (clusterIndex < getFirstClusterIndexWithAudioData() || clusterIndex >= getFirstClusterIndexWithNoAudioData()) {
+		return false;
+	}
+
+	SampleCluster* sampleCluster = clusters.getElement(clusterIndex);
+	if (!sampleCluster) {
+		return false;
+	}
+
+	Cluster* cluster = sampleCluster->getCluster(this, clusterIndex, CLUSTER_LOAD_IMMEDIATELY);
+	if (!cluster || !cluster->loaded) {
+		return false;
+	}
+
+	// Read the sample value(s) and convert to float
+	int32_t rawValue = *(int32_t*)&cluster->data[bytePosWithinCluster];
+	rawValue &= bitMask; // Apply bit mask to ensure correct sample values
+	q31_t nativeValue = convertToNative(rawValue);
+
+	// Simple conversion: scale from q31 range to float
+	*leftValue = static_cast<float>(nativeValue) / 2147483648.0f;
+
+	if (numChannels == 2 && rightValue) {
+		// Read right channel for stereo
+		int32_t rightBytePos = bytePosWithinCluster + byteDepth;
+		if (rightBytePos + 4 <= Cluster::size) {
+			rawValue = *(int32_t*)&cluster->data[rightBytePos];
+			rawValue &= bitMask; // Apply bit mask to ensure correct sample values
+			nativeValue = convertToNative(rawValue);
+			*rightValue = static_cast<float>(nativeValue) / 2147483648.0f;
+		}
+		else {
+			// Handle case where right channel spans cluster boundary
+			// For simplicity, just use left channel value as fallback
+			*rightValue = *leftValue;
+		}
+	}
+	else if (rightValue) {
+		// Mono sample, duplicate left channel to right
+		*rightValue = *leftValue;
+	}
+
+	return true;
+}
+
+// Find the best zero-crossing position near the target position
+// Returns the sample position of the best zero crossing, or fallback to lowest amplitude
+int32_t Sample::snapToZeroCrossing(int32_t i_target, int32_t maxOffsetSamples) {
+	if (maxOffsetSamples <= 0) {
+		return i_target;
+	}
+
+	// Define search range - always symmetric around target
+	int32_t startPos = i_target - maxOffsetSamples;
+	int32_t endPos = i_target + maxOffsetSamples;
+
+	// Clamp to valid sample range (need at least 2 samples to check for crossing)
+	startPos = std::max(static_cast<int32_t>(0), startPos);
+	endPos = std::min(static_cast<int32_t>(lengthInSamples - 2), endPos);
+
+	if (startPos >= endPos) {
+		return i_target; // No valid range to search
+	}
+
+	// Track best candidate
+	int32_t bestPos = -1;
+	float bestScore = INFINITY;
+
+	// Search through the range
+	for (int32_t pos = startPos; pos < endPos; ++pos) {
+		float left1, right1, left2, right2;
+
+		// Read values at pos and pos+1
+		if (!readSampleValue(pos, &left1, &right1) || !readSampleValue(pos + 1, &left2, &right2)) {
+			continue; // Skip if we can't read the samples
+		}
+
+		// Check for zero crossing
+		bool hasZeroCrossing = false;
+		if (numChannels == 1) {
+			hasZeroCrossing = (left1 * left2 <= 0.0f);
+		}
+		else {
+			hasZeroCrossing = ((left1 * left2 <= 0.0f) || (right1 * right2 <= 0.0f));
+		}
+
+		if (hasZeroCrossing) {
+			// For each sample in the crossing pair, calculate its amplitude
+			float amp1, amp2;
+			if (numChannels == 1) {
+				amp1 = std::abs(left1);
+				amp2 = std::abs(left2);
+			}
+			else {
+				amp1 = (std::abs(left1) + std::abs(right1)) * 0.5f;
+				amp2 = (std::abs(left2) + std::abs(right2)) * 0.5f;
+			}
+
+			// Choose the position with lower amplitude
+			int32_t chosenPos = pos;
+			float chosenAmp = amp1;
+			if (amp2 < amp1) {
+				chosenPos = pos + 1;
+				chosenAmp = amp2;
+			}
+
+			// Calculate distance score from chosen position
+			int32_t distScore = std::abs(chosenPos - i_target);
+
+			// Combined score: amplitude dominates, distance is tiebreaker
+			float score = chosenAmp * 1.0f + static_cast<float>(distScore) * 0.001f;
+
+			// Update best candidate if this is better
+			if (score < bestScore) {
+				bestScore = score;
+				bestPos = chosenPos;
+			}
+
+			// Early exit if amplitude is extremely low
+			if (chosenAmp < 1e-5f) {
+				break;
+			}
+		}
+	}
+
+	// If no zero crossings found, find position with minimum absolute amplitude
+	if (bestPos == -1) {
+		float minAmplitude = INFINITY;
+		int32_t fallbackPos = i_target;
+
+		for (int32_t pos = startPos; pos < endPos; ++pos) {
+			float left, right;
+			if (readSampleValue(pos, &left, &right)) {
+				float amplitude;
+				if (numChannels == 1) {
+					amplitude = std::abs(left);
+				}
+				else {
+					amplitude = (std::abs(left) + std::abs(right)) * 0.5f;
+				}
+
+				if (amplitude < minAmplitude) {
+					minAmplitude = amplitude;
+					fallbackPos = pos;
+				}
+			}
+		}
+
+		return fallbackPos;
+	}
+
+	return bestPos;
 }

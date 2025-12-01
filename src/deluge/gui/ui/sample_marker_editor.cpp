@@ -276,58 +276,76 @@ void SampleMarkerEditor::selectEncoderAction(int8_t offset) {
 
 	int32_t oldCol = cols[util::to_underlying(markerType)].colOnScreen;
 	int32_t oldPos = cols[util::to_underlying(markerType)].pos;
-	int32_t newCol = oldCol + offset;
 
-	// Make sure we don't drive one marker into the other
-	for (int32_t c = 0; c < kNumMarkerTypes; c++) {
-		if (c == util::to_underlying(markerType)) {
-			continue;
-		}
-		if (cols[c].colOnScreen == oldCol || cols[c].colOnScreen == newCol) {
-			return;
-		}
+	int32_t newMarkerPos;
+
+	// Check for SHIFT+encoder zero-crossing nudge
+	if (Buttons::isShiftButtonPressed()
+	    && (markerType == MarkerType::LOOP_START || markerType == MarkerType::LOOP_END)) {
+		// Zero-crossing nudge mode
+		int32_t searchRadius = 512; // ~5-10ms depending on sample rate
+
+		newMarkerPos = waveformBasicNavigator.sample->snapToZeroCrossing(oldPos, searchRadius);
 	}
+	else {
+		// Normal encoder behavior
+		int32_t newCol = oldCol + offset;
 
-	int32_t newMarkerPos = (markerType < MarkerType::LOOP_END) ? getStartPosFromCol(newCol) : getEndPosFromCol(newCol);
-
-	if (newMarkerPos < 0) {
-		newMarkerPos = 0;
-	}
-
-	if (offset >= 0) {
-		if (markerType == MarkerType::END && shouldAllowExtraScrollRight()) {
-			if (newMarkerPos < oldPos) {
+		// Make sure we don't drive one marker into the other
+		for (int32_t c = 0; c < kNumMarkerTypes; c++) {
+			if (c == util::to_underlying(markerType)) {
+				continue;
+			}
+			if (cols[c].colOnScreen == oldCol || cols[c].colOnScreen == newCol) {
 				return;
 			}
 		}
-		else {
-			if (newMarkerPos > waveformBasicNavigator.sample->lengthInSamples) {
-				newMarkerPos = waveformBasicNavigator.sample->lengthInSamples;
+
+		newMarkerPos = (markerType < MarkerType::LOOP_END) ? getStartPosFromCol(newCol) : getEndPosFromCol(newCol);
+
+		if (newMarkerPos < 0) {
+			newMarkerPos = 0;
+		}
+
+		if (offset >= 0) {
+			if (markerType == MarkerType::END && shouldAllowExtraScrollRight()) {
+				if (newMarkerPos < oldPos) {
+					return;
+				}
+			}
+			else {
+				if (newMarkerPos > waveformBasicNavigator.sample->lengthInSamples) {
+					newMarkerPos = waveformBasicNavigator.sample->lengthInSamples;
+				}
 			}
 		}
 	}
 
 	writeValue(newMarkerPos);
 
-	// If marker was on-screen...
-	if (oldCol >= 0 && oldCol < kDisplayWidth) {
+	// Handle scrolling for normal encoder behavior only
+	if (!Buttons::isShiftButtonPressed()
+	    || (markerType != MarkerType::LOOP_START && markerType != MarkerType::LOOP_END)) {
+		// If marker was on-screen...
+		if (oldCol >= 0 && oldCol < kDisplayWidth) {
 
-		getColsOnScreen(cols);
-		// It might have changed, and despite having a newCol variable above, that's only our desired value - we might
-		// have run into the end of the sample
-		newCol = cols[util::to_underlying(markerType)].colOnScreen;
+			getColsOnScreen(cols);
+			// It might have changed, and despite having a newCol variable above, that's only our desired value - we
+			// might have run into the end of the sample
+			int32_t newCol = cols[util::to_underlying(markerType)].colOnScreen;
 
-		// But isn't anymore...
-		if (newCol < 0 || newCol >= kDisplayWidth) {
+			// But isn't anymore...
+			if (newCol < 0 || newCol >= kDisplayWidth) {
 
-			// Move scroll
-			waveformBasicNavigator.xScroll += waveformBasicNavigator.xZoom * offset;
+				// Move scroll
+				waveformBasicNavigator.xScroll += waveformBasicNavigator.xZoom * offset;
 
-			if (waveformBasicNavigator.xScroll < 0) {
-				waveformBasicNavigator.xScroll = 0; // Shouldn't happen...
+				if (waveformBasicNavigator.xScroll < 0) {
+					waveformBasicNavigator.xScroll = 0; // Shouldn't happen...
+				}
+
+				recordScrollAndZoom();
 			}
-
-			recordScrollAndZoom();
 		}
 	}
 

@@ -105,6 +105,14 @@ public:
 		return value;
 	}
 
+	// Read a single sample value at the specified sample position
+	// Returns true if successful, false if sample data not available
+	bool readSampleValue(int32_t samplePos, float* leftValue, float* rightValue);
+
+	// Find the best zero-crossing position near the target position
+	// Returns the sample position of the best zero crossing, or -1 if none found
+	int32_t snapToZeroCrossing(int32_t i_target, int32_t maxOffsetSamples);
+
 	String tempFilePathForRecording;
 	uint8_t byteDepth{0};
 	uint32_t sampleRate{44100};
