@@ -31,6 +31,7 @@
 #include "gui/waveform/waveform_renderer.h"
 #include "hid/buttons.h"
 #include "hid/display/display.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -93,6 +94,11 @@ void AudioClipView::focusRegained() {
 }
 
 void AudioClipView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) {
+	// Check if visualizer should be displayed in clip view
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
 	view.displayOutputName(getCurrentOutput(), false, getCurrentClip());
 }
 
