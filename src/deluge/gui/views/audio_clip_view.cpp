@@ -85,6 +85,9 @@ void AudioClipView::focusRegained() {
 	view.focusRegained();
 	view.setActiveModControllableTimelineCounter(getCurrentClip());
 
+	// Set current clip for visualizer when entering clip view
+	deluge::hid::display::Visualizer::trySetClipForVisualizer(getCurrentClip());
+
 	if (display->have7SEG()) {
 		view.displayOutputName(getCurrentOutput(), false);
 	}
