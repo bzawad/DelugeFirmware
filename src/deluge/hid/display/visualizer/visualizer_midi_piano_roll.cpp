@@ -22,6 +22,9 @@
 #include "hid/display/oled.h"
 #include "hid/display/oled_canvas/canvas.h"
 #include "hid/display/visualizer.h"
+#include "model/clip/clip.h"
+#include "model/instrument/midi_instrument.h"
+#include "playback/playback_handler.h"
 #include <algorithm>
 #include <array>
 
@@ -47,6 +50,11 @@ constexpr int32_t kOLEDWidth = OLED_MAIN_WIDTH_PIXELS;
 constexpr int32_t kOLEDHeight = OLED_MAIN_HEIGHT_PIXELS - OLED_MAIN_TOPMOST_PIXEL;
 constexpr int32_t kOLEDHeightMinus1 = kOLEDHeight - 1;
 
+// Time-based scrolling constants
+// At 44.1kHz sample rate, target ~30 FPS scrolling at 100 BPM: 44100 / 30 ≈ 1470 samples per frame
+constexpr uint32_t kMinTimeBetweenFramesAt100BPM = 1470;
+constexpr float kReferenceBPM = 100.0f; // Reference BPM for tempo calculations
+
 // Maximum simultaneous notes to track (limited by memory and performance constraints)
 // This limit prevents excessive memory usage while allowing for complex polyphonic music.
 // Value of 32 chosen as a reasonable upper bound for:
@@ -62,6 +70,8 @@ struct MidiPianoRollState {
 	std::array<ActiveNote, kMaxActiveNotes> activeNotes;
 	size_t activeNotesCount = 0; // Number of currently active notes
 	uint32_t frameCounter = 0;
+	uint32_t lastRenderTime = 0;  // Last time the visualizer was rendered (audio sample timer)
+	uint32_t accumulatedTime = 0; // Accumulated time for consistent timing
 	bool initialized = false;
 	bool isActive = false;
 };
@@ -81,6 +91,8 @@ void resetMidiPianoRoll() {
 
 	// Reset frame counter and timing
 	state.frameCounter = 0;
+	state.lastRenderTime = AudioEngine::audioSampleTimer;
+	state.accumulatedTime = 0;
 	state.initialized = true;
 	state.isActive = true;
 }
@@ -133,9 +145,11 @@ void cleanupOldNotes() {
 /// @param note MIDI note number (0-127)
 /// @param on true for note-on, false for note-off
 /// @param velocity Note velocity
+/// @param channel MIDI channel (0-15, or -1 for any channel in global mode)
 /// @param visualizerActive true if MIDI piano roll visualizer is currently active
 /// @param isInput true if this is input MIDI, false if output MIDI
-void midiPianoRollNoteEvent(uint8_t note, bool on, uint8_t velocity, bool visualizerActive, bool isInput) {
+void midiPianoRollNoteEvent(uint8_t note, bool on, uint8_t velocity, int32_t channel, bool visualizerActive,
+                            bool isInput) {
 	// Comprehensive bounds checking for MIDI note values
 	if (note > kMaxMIDIValue) {
 		return; // Invalid note number (MIDI notes are 0-127)
@@ -147,6 +161,20 @@ void midiPianoRollNoteEvent(uint8_t note, bool on, uint8_t velocity, bool visual
 	}
 	if (!on && velocity > kMaxMIDIValue) {
 		return; // Invalid velocity for note-off
+	}
+
+	// Channel filtering for clip-level visualizer
+	// When viewing a MIDI instrument clip, only show notes from that instrument's channel
+	Clip* currentClip = Visualizer::getCurrentClipForVisualizer();
+	if (currentClip && currentClip->type == ClipType::INSTRUMENT && currentClip->output
+	    && currentClip->output->type == OutputType::MIDI_OUT && Visualizer::visualizer_toggle_enabled) {
+		MIDIInstrument* midiInstrument = static_cast<MIDIInstrument*>(currentClip->output);
+		int32_t clipChannel = midiInstrument->getChannel();
+		// For MPE instruments, don't filter (show all notes for that instrument)
+		// For regular MIDI instruments, only show notes on the instrument's channel
+		if (clipChannel >= 0 && clipChannel <= 15 && channel != clipChannel) {
+			return; // Note is not from the current clip's instrument channel
+		}
 	}
 
 	// Update active state
@@ -210,8 +238,24 @@ void renderVisualizerMidiPianoRollInternal(oled_canvas::Canvas& canvas) {
 	// Mark visualizer as active (since render function is only called when active)
 	state.isActive = true;
 
-	// Increment frame counter
-	state.frameCounter++;
+	// Calculate tempo-based scrolling speed
+	float bpm = playbackHandler.calculateBPMForDisplay();
+	bpm = std::max(bpm, 1.0f);               // Prevent division by zero
+	float tempo_ratio = kReferenceBPM / bpm; // Higher BPM = faster scrolling (smaller ratio)
+	uint32_t minTimeBetweenFrames = static_cast<uint32_t>(kMinTimeBetweenFramesAt100BPM * tempo_ratio);
+
+	// Accumulate time for consistent scrolling speed regardless of rendering frequency
+	uint32_t currentTime = AudioEngine::audioSampleTimer;
+	uint32_t timeDiff = currentTime - state.lastRenderTime;
+	state.accumulatedTime += timeDiff;
+	state.lastRenderTime = currentTime;
+
+	// Increment frame counter by the number of frames that should have passed
+	uint32_t framesToIncrement = state.accumulatedTime / minTimeBetweenFrames;
+	if (framesToIncrement > 0) {
+		state.frameCounter += framesToIncrement;
+		state.accumulatedTime -= framesToIncrement * minTimeBetweenFrames;
+	}
 
 	// Clean up old notes that have scrolled off screen
 	cleanupOldNotes();

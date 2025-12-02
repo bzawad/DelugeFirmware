@@ -16,7 +16,9 @@
  */
 
 #include "hid/display/visualizer.h"
+#include "definitions_cxx.hpp"
 #include "deluge/model/clip/clip.h"
+#include "deluge/model/instrument/midi_instrument.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
 #include "extern.h"
 #include "gui/l10n/l10n.h"
@@ -35,6 +37,11 @@
 #include "hid/display/visualizer/visualizer_cube.h"
 #include "hid/display/visualizer/visualizer_line_spectrum.h"
 #include "hid/display/visualizer/visualizer_midi_piano_roll.h"
+
+// Forward declaration for internal MIDI piano roll function
+namespace deluge::hid::display {
+void resetMidiPianoRoll();
+}
 #include "hid/display/visualizer/visualizer_pulsegrid.h"
 #include "hid/display/visualizer/visualizer_skyline.h"
 #include "hid/display/visualizer/visualizer_starfield.h"
@@ -221,10 +228,11 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 		else if (inClipContext && visualizer_toggle_enabled) {
 			Clip* currentClip = getCurrentClipForVisualizer();
 			if (currentClip) {
-				// Don't show visualizer for MIDI/CV clips in clip contexts
+				// Don't show visualizer for CV clips in clip contexts (MIDI clips now supported)
 				if (!((currentClip->type == ClipType::INSTRUMENT
 				       && (currentClip->output->type == OutputType::SYNTH
-				           || currentClip->output->type == OutputType::KIT))
+				           || currentClip->output->type == OutputType::KIT
+				           || currentClip->output->type == OutputType::MIDI_OUT))
 				      || currentClip->type == ClipType::AUDIO)) {
 					shouldEnable = false;
 				}
@@ -283,17 +291,22 @@ bool Visualizer::potentiallyRenderVisualizer(oled_canvas::Canvas& canvas, bool d
 /// Render visualizer waveform or spectrum on OLED display
 /// Handles both global mix and clip-specific visualization modes
 void Visualizer::renderVisualizer(oled_canvas::Canvas& canvas) {
-	// Check if we're in clip context with a Synth/Kit/Audio clip - if so, force Waveform mode
+	// Check if we're in clip context with a Synth/Kit/Audio/MIDI clip - if so, force appropriate mode
 	// BUT only if the toggle is enabled (clip visualizer should only show when toggle is on)
 	if (isInClipContext() && visualizer_toggle_enabled) {
 		Clip* currentClip = getCurrentClipForVisualizer();
-		if (currentClip
-		    && ((currentClip->type == ClipType::INSTRUMENT
-		         && (currentClip->output->type == OutputType::SYNTH || currentClip->output->type == OutputType::KIT))
-		        || currentClip->type == ClipType::AUDIO)) {
-			// Always use Waveform mode in clip view for Synth/Kit/Audio clips
-			::deluge::hid::display::renderVisualizerWaveform(canvas);
-			return;
+		if (currentClip && currentClip->type == ClipType::INSTRUMENT && currentClip->output) {
+			if (currentClip->output->type == OutputType::SYNTH || currentClip->output->type == OutputType::KIT
+			    || currentClip->output->type == OutputType::AUDIO) {
+				// Always use Waveform mode in clip view for Synth/Kit/Audio clips
+				::deluge::hid::display::renderVisualizerWaveform(canvas);
+				return;
+			}
+			else if (currentClip->output->type == OutputType::MIDI_OUT) {
+				// Use MIDI Piano Roll mode in clip view for MIDI instrument clips
+				::deluge::hid::display::renderVisualizerMidiPianoRoll(canvas);
+				return;
+			}
 		}
 	}
 
@@ -571,8 +584,8 @@ bool Visualizer::isInClipContext() {
 }
 
 /// Check if visualizer should display clip-specific audio vs. full mix
-/// @return true if in clip mode (instrument clip view or keyboard screen with Synth/Kit clip, or holding clip in
-/// Song/Arranger view). MIDI clips are excluded.
+/// @return true if in clip mode (instrument clip view or keyboard screen with Synth/Kit/Audio/MIDI clip, or holding
+/// clip in Song/Arranger view).
 bool Visualizer::isClipMode() {
 	if (!isInClipContext()) {
 		return false;
@@ -588,9 +601,10 @@ bool Visualizer::isClipMode() {
 		return false;
 	}
 
-	// Enable for Instrument clips with Synth/Kit outputs OR Audio clips
+	// Enable for Instrument clips with Synth/Kit/MIDI outputs OR Audio clips
 	return ((currentClip->type == ClipType::INSTRUMENT
-	         && (currentClip->output->type == OutputType::SYNTH || currentClip->output->type == OutputType::KIT))
+	         && (currentClip->output->type == OutputType::SYNTH || currentClip->output->type == OutputType::KIT
+	             || currentClip->output->type == OutputType::MIDI_OUT))
 	        || currentClip->type == ClipType::AUDIO);
 }
 
@@ -605,10 +619,35 @@ bool Visualizer::isClipVisualizerActive(bool displayVUMeter) {
 void Visualizer::displayClipProgramNamePopup() {
 	Clip* currentClip = getCurrentClipForVisualizer();
 	if (currentClip && currentClip->output) {
-		// Get the program name from the output
-		std::string_view programName = currentClip->output->name.get();
-		if (!programName.empty()) {
-			::display->displayPopup(programName.data());
+		// Special handling for MIDI instruments - show channel number
+		if (currentClip->output->type == OutputType::MIDI_OUT) {
+			MIDIInstrument* midiInstrument = static_cast<MIDIInstrument*>(currentClip->output);
+			int32_t channel = midiInstrument->getChannel();
+			char buffer[16];
+			if (channel >= 0 && channel <= 15) {
+				// Display as "MIDI 1" to "MIDI 16" (channels are 0-15 internally)
+				snprintf(buffer, sizeof(buffer), "MIDI %d", channel + 1);
+			}
+			else if (channel == MIDI_CHANNEL_MPE_LOWER_ZONE) {
+				// Display MPE lower zone
+				snprintf(buffer, sizeof(buffer), "MPE LOWER");
+			}
+			else if (channel == MIDI_CHANNEL_MPE_UPPER_ZONE) {
+				// Display MPE upper zone
+				snprintf(buffer, sizeof(buffer), "MPE UPPER");
+			}
+			else {
+				// Fallback for other cases
+				snprintf(buffer, sizeof(buffer), "MIDI OUT");
+			}
+			::display->displayPopup(buffer);
+		}
+		else {
+			// For other instrument types, show the program name
+			std::string_view programName = currentClip->output->name.get();
+			if (!programName.empty()) {
+				::display->displayPopup(programName.data());
+			}
 		}
 	}
 	clip_program_popup_shown = true;
@@ -649,6 +688,9 @@ void Visualizer::clearVisualizerBuffer() {
 	// Reset silence timers when clearing buffer (typically when switching clips)
 	global_visualizer_last_audio_time = AudioEngine::audioSampleTimer;
 	clip_visualizer_last_audio_time = AudioEngine::audioSampleTimer;
+
+	// Clear MIDI piano roll state when switching clips
+	resetMidiPianoRoll();
 }
 
 /// Check if clip visualizer should be activated for a given clip

@@ -29,8 +29,10 @@ void renderVisualizerMidiPianoRoll(oled_canvas::Canvas& canvas);
 /// @param note MIDI note number (0-127)
 /// @param on true for note-on, false for note-off
 /// @param velocity Note velocity
+/// @param channel MIDI channel (0-15, or -1 for any channel in global mode)
 /// @param visualizerActive true if MIDI piano roll visualizer is currently active
 /// @param isInput true if this is input MIDI, false if output MIDI (default: false)
-void midiPianoRollNoteEvent(uint8_t note, bool on, uint8_t velocity, bool visualizerActive, bool isInput = false);
+void midiPianoRollNoteEvent(uint8_t note, bool on, uint8_t velocity, int32_t channel, bool visualizerActive,
+                            bool isInput = false);
 
 } // namespace deluge::hid::display
