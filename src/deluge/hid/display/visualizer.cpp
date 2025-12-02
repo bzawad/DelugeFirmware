@@ -623,10 +623,18 @@ void Visualizer::displayClipProgramNamePopup() {
 		if (currentClip->output->type == OutputType::MIDI_OUT) {
 			MIDIInstrument* midiInstrument = static_cast<MIDIInstrument*>(currentClip->output);
 			int32_t channel = midiInstrument->getChannel();
+			int32_t channelSuffix = midiInstrument->channelSuffix;
 			char buffer[16];
 			if (channel >= 0 && channel <= 15) {
-				// Display as "MIDI 1" to "MIDI 16" (channels are 0-15 internally)
-				snprintf(buffer, sizeof(buffer), "MIDI %d", channel + 1);
+				// Display as "MIDI 1", "MIDI 1A", "MIDI 1B", etc. (channels are 0-15 internally)
+				if (channelSuffix >= 0) {
+					// Extended MIDI channel with suffix
+					snprintf(buffer, sizeof(buffer), "MIDI %d%c", channel + 1, 'A' + channelSuffix);
+				}
+				else {
+					// Regular MIDI channel
+					snprintf(buffer, sizeof(buffer), "MIDI %d", channel + 1);
+				}
 			}
 			else if (channel == MIDI_CHANNEL_MPE_LOWER_ZONE) {
 				// Display MPE lower zone
