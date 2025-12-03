@@ -28,7 +28,7 @@
 class Clip;
 
 // Forward declarations for OLED canvas
-namespace deluge::hid::display::oled_canvas {
+namespace oled_canvas {
 class Canvas;
 }
 
