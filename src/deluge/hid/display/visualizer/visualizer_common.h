@@ -27,11 +27,6 @@
 // Forward declarations
 class Clip;
 
-// Forward declarations for OLED canvas
-namespace oled_canvas {
-class Canvas;
-}
-
 namespace deluge::hid::display {
 
 // FFT computation result structure
