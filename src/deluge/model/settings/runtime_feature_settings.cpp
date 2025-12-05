@@ -257,7 +257,7 @@ void RuntimeFeatureSettings::init() {
 
 	// Visualizer
 	SetupVisualizerSetting(settings[RuntimeFeatureSettingType::Visualizer], STRING_FOR_COMMUNITY_FEATURE_VISUALIZER,
-	                       "visualizer", RuntimeFeatureStateVisualizer::VisualizerWaveform);
+	                       "visualizer", RuntimeFeatureStateVisualizer::VisualizerOff);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {
