@@ -359,6 +359,7 @@ PLACE_SDRAM_DATA Language seven_segment{
         {STRING_FOR_DX_1, "DX7"},
         {STRING_FOR_DX_BROWSER, "SYX"},
         {STRING_FOR_DX_CONVERT, "CNVT"},
+        {STRING_FOR_DX_CONVERT_ALL, "CNVA"},
         {STRING_FOR_DX_CARTRIDGE, "PRES"},
         {STRING_FOR_DX_PARAM, "PARM"},
         {STRING_FOR_DX_GLOBAL_PARAMS, "EDIT"},

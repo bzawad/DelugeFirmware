@@ -29,12 +29,17 @@ public:
 	Error getCurrentFilePath(String* path) override;
 	// ui
 	UIType getUIType() override { return UIType::DX_BROWSER; }
+	ActionResult timerCallback() override;
+	void close();
 
 	// Set conversion mode - when true, selecting a file will convert it instead of loading it
 	void setConversionMode(bool conversion) {
 		conversionMode_ = conversion;
 		// Update title based on mode
-		if (conversionMode_) {
+		if (convertAllMode_) {
+			title = "CONVERT ALL DX7 SYX";
+		}
+		else if (conversionMode_) {
 			title = "CONVERT DX7 SYX";
 		}
 		else {
@@ -42,8 +47,16 @@ public:
 		}
 	}
 
+	// Set convert all mode - when true, automatically converts all files
+	void setConvertAllMode(bool convertAll) {
+		convertAllMode_ = convertAll;
+		setConversionMode(conversionMode_);
+	}
+
 private:
 	bool conversionMode_ = false;
+	bool convertAllMode_ = false;
+	bool convertAllStopping_ = false;
 };
 
 extern DxSyxBrowser dxBrowser;

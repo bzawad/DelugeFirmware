@@ -43,41 +43,55 @@
 namespace deluge::dx7 {
 
 Error DX7Converter::convertSysexToXML(std::string_view syxPath) {
-	// Extract filename without extension from path
+	// Extract relative path from DX7 directory and filename without extension
 	const char* path_str = syxPath.data();
 	size_t path_len = syxPath.length();
 
-	// Find the last slash to get just the filename
-	const char* filename_start = path_str;
-	for (size_t i = 0; i < path_len; ++i) {
-		if (path_str[i] == '/') {
-			filename_start = path_str + i + 1;
+	// Find the DX7 directory start
+	const char* dx7_start = nullptr;
+	const char* dx7_end = nullptr;
+	const char dx7_prefix[] = "DX7/";
+	const size_t dx7_prefix_len = sizeof(dx7_prefix) - 1; // exclude null terminator
+
+	// Look for "DX7/" at the beginning of the path
+	if (path_len >= dx7_prefix_len && strncmp(path_str, dx7_prefix, dx7_prefix_len) == 0) {
+		dx7_start = path_str + dx7_prefix_len;
+		dx7_end = path_str + path_len;
+	}
+	else {
+		// Fallback: find the last slash to get just the filename (original behavior)
+		dx7_start = path_str;
+		for (size_t i = 0; i < path_len; ++i) {
+			if (path_str[i] == '/') {
+				dx7_start = path_str + i + 1;
+			}
 		}
+		dx7_end = path_str + path_len;
 	}
 
-	// Find the last dot in the filename to strip extension
+	// Find the last dot in the relative path to strip extension
 	const char* extension_start = nullptr;
-	for (const char* p = filename_start; p < path_str + path_len; ++p) {
+	for (const char* p = dx7_start; p < dx7_end; ++p) {
 		if (*p == '.') {
 			extension_start = p;
 		}
 	}
 
-	// Copy filename without extension to buffer
+	// Copy relative path without extension to buffer
 	std::array<char, 256> syx_filename{};
 	size_t filename_len = 0;
 	if (extension_start != nullptr) {
-		filename_len = extension_start - filename_start;
+		filename_len = extension_start - dx7_start;
 	}
 	else {
-		filename_len = (path_str + path_len) - filename_start;
+		filename_len = dx7_end - dx7_start;
 	}
 
 	if (filename_len >= syx_filename.size()) {
 		filename_len = syx_filename.size() - 1;
 	}
 
-	strncpy(syx_filename.data(), filename_start, filename_len);
+	strncpy(syx_filename.data(), dx7_start, filename_len);
 	syx_filename[filename_len] = '\0';
 
 	// Check if destination directory already exists
@@ -196,6 +210,7 @@ Error DX7Converter::createDestinationDirectory(const char* syxFilename) {
 	snprintf(path.data(), path.size(), "SYNTHS/DX7/%s", syxFilename);
 
 	// Use StorageManager's buildPathToFile to create the directory structure
+	// This will create all necessary subdirectories (e.g., SYNTHS/DX7/Atari/Basses)
 	if (!StorageManager::buildPathToFile(path.data())) {
 		return Error::WRITE_FAIL;
 	}
@@ -217,13 +232,41 @@ Error DX7Converter::convertPresetToXML(DX7Cartridge& cartridge, int presetIndex,
 	std::array<char, 256> sanitized_filename{};
 	generateSanitizedFilename(preset_name.data(), sanitized_filename.data(), sanitized_filename.size());
 
-	// Check if XML file already exists
+	// Find an available filename by trying the base name first, then with numbers 2-32 appended
 	std::array<char, 1024> xml_path{};
-	buildPresetPath(syxFilename, sanitized_filename.data(), xml_path.data(), xml_path.size());
+	std::array<char, 256> final_filename{};
 
-	if (StorageManager::fileExists(xml_path.data())) {
-		// Skip this preset if file already exists
-		return Error::FILE_ALREADY_EXISTS;
+	// Copy the sanitized filename as the base
+	strncpy(final_filename.data(), sanitized_filename.data(), final_filename.size() - 1);
+	final_filename[final_filename.size() - 1] = '\0';
+
+	// Try the base filename first
+	buildPresetPath(syxFilename, final_filename.data(), xml_path.data(), xml_path.size());
+	if (!StorageManager::fileExists(xml_path.data())) {
+		// Base filename is available, use it
+	}
+	else {
+		// Base filename exists, try appending numbers from 2 to 32
+		bool foundAvailable = false;
+		for (int suffix = 2; suffix <= 32 && !foundAvailable; ++suffix) {
+			// Create filename with number appended (e.g., "Bass 2", "Bass 3", etc.)
+			int len =
+			    snprintf(final_filename.data(), final_filename.size(), "%s %d", sanitized_filename.data(), suffix);
+			if (len >= static_cast<int>(final_filename.size())) {
+				// Filename too long, skip this suffix
+				continue;
+			}
+
+			buildPresetPath(syxFilename, final_filename.data(), xml_path.data(), xml_path.size());
+			if (!StorageManager::fileExists(xml_path.data())) {
+				foundAvailable = true;
+			}
+		}
+
+		// If we couldn't find an available filename after trying all suffixes, skip this preset
+		if (!foundAvailable) {
+			return Error::FILE_ALREADY_EXISTS;
+		}
 	}
 
 	// Use the existing sound editor's current sound
