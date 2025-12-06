@@ -48,10 +48,10 @@ bool DxSyxBrowser::opened() {
 
 	// Set title based on mode
 	if (conversionMode_) {
-		title = "CONVERT DX7 FILE";
+		title = "CONVERT DX7 SYX";
 	}
 	else {
-		title = "LOAD DX7 FILE";
+		title = "LOAD DX7 SYX";
 	}
 
 	Error error = StorageManager::initSD();

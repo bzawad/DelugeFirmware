@@ -31,7 +31,16 @@ public:
 	UIType getUIType() override { return UIType::DX_BROWSER; }
 
 	// Set conversion mode - when true, selecting a file will convert it instead of loading it
-	void setConversionMode(bool conversion) { conversionMode_ = conversion; }
+	void setConversionMode(bool conversion) {
+		conversionMode_ = conversion;
+		// Update title based on mode
+		if (conversionMode_) {
+			title = "CONVERT DX7 SYX";
+		}
+		else {
+			title = "LOAD DX7 SYX";
+		}
+	}
 
 private:
 	bool conversionMode_ = false;
