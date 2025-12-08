@@ -132,7 +132,8 @@ void DxSyxBrowser::enterKeyPress() {
 					display->displayError(error);
 				}
 				else {
-					// Conversion successful, move file to DX7_CONVERTED folder in convert all mode
+					// Conversion successful (or already converted), move file to DX7_CONVERTED folder in convert all
+					// mode
 					if (convertAllMode_) {
 						// Create DX7_CONVERTED folder if it doesn't exist
 						Error folderError = createFoldersRecursiveIfNotExists("DX7_CONVERTED");
@@ -229,7 +230,7 @@ void DxSyxBrowser::close() {
 
 ActionResult DxSyxBrowser::timerCallback() {
 	if ((convertAllMode_ || convertAllStopping_) && conversionMode_) {
-		// Convert all mode: automatically advance to next file and convert it
+		// Convert all mode: convert current file, then try to advance to next
 		int32_t currentIndex = fileIndexSelected;
 		int32_t numFiles = fileItems.getNumElements();
 
@@ -238,20 +239,24 @@ ActionResult DxSyxBrowser::timerCallback() {
 			// Check if we've reached the end of all available files or are stopping
 			// We're done if: current index is at or beyond the last loaded file AND there are no more files to load
 			if (currentIndex >= numFiles - 1 && numFileItemsDeletedAtEnd == 0) {
-				convertAllMode_ = false;
+				// Don't reset convertAllMode_ - keep it active until user leaves the browser
+				// convertAllMode_ = false;
 				convertAllStopping_ = false;
 				uiTimerManager.unsetTimer(TimerName::UI_SPECIFIC);
-				Browser::close();
+				// Don't close browser - let user continue converting more files
+				// Browser::close();
 				return ActionResult::DEALT_WITH;
 			}
 
 			// If advancing didn't change the file index, we might be stuck (e.g., wrapped to beginning)
-			// In that case, stop the conversion
+			// In that case, stop the conversion but keep convert all mode active
 			if (fileIndexSelected == currentIndex) {
-				convertAllMode_ = false;
+				// Don't reset convertAllMode_ - keep it active until user leaves the browser
+				// convertAllMode_ = false;
 				convertAllStopping_ = false;
 				uiTimerManager.unsetTimer(TimerName::UI_SPECIFIC);
-				Browser::close();
+				// Don't close browser - let user continue
+				// Browser::close();
 				return ActionResult::DEALT_WITH;
 			}
 
@@ -259,27 +264,27 @@ ActionResult DxSyxBrowser::timerCallback() {
 			return ActionResult::DEALT_WITH;
 		}
 
-		// Check if we've reached the end of all available files
-		// We're done if: current index is at or beyond the last loaded file AND there are no more files to load
-		if (currentIndex >= numFiles - 1 && numFileItemsDeletedAtEnd == 0) {
-			convertAllMode_ = false;
-			uiTimerManager.unsetTimer(TimerName::UI_SPECIFIC);
-			return ActionResult::DEALT_WITH;
-		}
+		// Convert the currently selected file
+		enterKeyPress();
 
-		// Advance to next file (this will load more files if needed)
+		// Refresh the file list since files may have been moved
+		arrivedInNewFolder(0, "", "");
+
+		// Now try to advance to next file
+		int32_t oldIndex = fileIndexSelected;
 		selectEncoderAction(1);
 
-		// If advancing didn't change the file index, we might be stuck (e.g., wrapped to beginning)
-		// In that case, stop the conversion
-		if (fileIndexSelected == currentIndex) {
-			convertAllMode_ = false;
+		// If advancing didn't change the file index, we might be stuck or at the end
+		// In that case, stop the conversion but keep convert all mode active
+		if (fileIndexSelected == oldIndex) {
+			// Don't reset convertAllMode_ - keep it active until user leaves the browser
+			// convertAllMode_ = false;
 			uiTimerManager.unsetTimer(TimerName::UI_SPECIFIC);
 			return ActionResult::DEALT_WITH;
 		}
 
-		// Convert the newly selected file
-		enterKeyPress();
+		// Set timer for next conversion (500ms delay between conversions)
+		uiTimerManager.setTimer(TimerName::UI_SPECIFIC, 500);
 	}
 
 	// Call parent timerCallback for any other functionality

@@ -65,14 +65,52 @@ static bool openFile(std::string_view path, DX7Cartridge* data) {
 		return false; //
 	});
 
-	if (readbuffer.size() < minSize) {
-		display->displayPopup(l10n::get(STRING_FOR_DX_ERROR_FILE_TOO_SMALL));
-	}
+	// Check for basic file issues that indicate poor data quality
+	bool fileTooSmall = (readbuffer.size() < minSize);
+	bool notSysexFormat = (readbuffer.size() >= 1 && readbuffer[0] != std::byte{0xF0});
 
+	// Try to load the data (now always succeeds, using defaults for missing data)
 	error = data->load(readbuffer);
 	if (error != EMPTY_STRING) {
 		display->displayPopup(l10n::get(error), 3);
 		return false;
+	}
+
+	// Show warnings for data quality issues
+	if (fileTooSmall) {
+		display->displayPopup(l10n::get(STRING_FOR_DX_ERROR_FILE_TOO_SMALL), 3);
+	}
+	else if (notSysexFormat) {
+		display->displayPopup(l10n::get(STRING_FOR_DX_ERROR_NO_SYSEX_START), 3);
+	}
+	else {
+		// For valid SYSEX format, check for checksum and ID issues
+		size_t expectedMsgSize = 0;
+		size_t i;
+		for (i = 0; i < readbuffer.size(); ++i) {
+			if (readbuffer[i] == std::byte{0xF7}) {
+				expectedMsgSize = i + 1;
+				break;
+			}
+		}
+
+		if (expectedMsgSize > 0) {
+			size_t dataSize = (expectedMsgSize == kSysexSize) ? 4096 : 155;
+			bool hasChecksumError =
+			    (expectedMsgSize <= readbuffer.size()
+			     && sysexChecksum({&data->getRawVoice()[0], dataSize}) != readbuffer[expectedMsgSize - 2]);
+
+			const std::byte* voiceData = data->getRawVoice() - 6;
+			bool hasSysexIdError =
+			    (voiceData[1] != std::byte{67} || (voiceData[3] != std::byte{9} && voiceData[3] != std::byte{0}));
+
+			if (hasChecksumError) {
+				display->displayPopup(l10n::get(deluge::l10n::String::STRING_FOR_DX_ERROR_CHECKSUM_FAIL), 3);
+			}
+			else if (hasSysexIdError) {
+				display->displayPopup(l10n::get(deluge::l10n::String::STRING_FOR_DX_ERROR_SYSEX_ID), 3);
+			}
+		}
 	}
 
 	return true;

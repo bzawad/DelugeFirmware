@@ -90,15 +90,25 @@ public:
 
 		size_t minMsgSize = 163;
 
+		// Initialize with a default cartridge header to provide sensible defaults
+		setHeader();
+
 		if (stream.size() < minMsgSize) {
-			std::ranges::copy(stream, &voiceData[6]);
-			return String::STRING_FOR_DX_ERROR_FILE_TOO_SMALL;
+			// File too small - copy what we have over the defaults
+			size_t copySize = std::min(stream.size(), size_t{4096});
+			if (copySize > 0) {
+				std::copy_n(pos, copySize, &voiceData[6]);
+			}
+			// Missing data stays as default values from setHeader()
+			return String::EMPTY_STRING;
 		}
 
 		if (pos[0] != std::byte{0xF0}) {
-			// it is not, just copy the first 4096 bytes
-			std::copy_n(pos, 4096, &voiceData[6]);
-			return String::STRING_FOR_DX_ERROR_NO_SYSEX_START;
+			// Not proper SYSEX - copy what we can over the defaults
+			size_t copySize = std::min(stream.size(), size_t{4096});
+			std::copy_n(pos, copySize, &voiceData[6]);
+			// Missing data stays as default values
+			return String::EMPTY_STRING;
 		}
 
 		size_t i;
@@ -108,26 +118,24 @@ public:
 				break;
 			}
 		}
-		if (i == stream.size()) {
-			return String::STRING_FOR_DX_ERROR_NO_SYSEX_END;
-		}
 
 		int msgSize = i + 1;
 
-		if (msgSize != kSysexSize && msgSize != kSmallSysexSize) {
-			return String::STRING_FOR_DX_ERROR_INVALID_LEN;
+		// Try to load whatever data we can find
+		if (i < stream.size()) {
+			// Found SYSEX end marker - copy the SYSEX data
+			size_t copySize = std::min(static_cast<size_t>(msgSize), stream.size());
+			std::copy_n(pos, copySize, voiceData.begin());
+			// If truncated, missing data stays as defaults
+		}
+		else {
+			// No end marker - copy what we can
+			size_t copySize = std::min(stream.size(), size_t{kSysexSize});
+			std::copy_n(pos, copySize, voiceData.begin());
+			// Missing data stays as defaults
 		}
 
-		std::copy_n(pos, msgSize, voiceData.begin());
-		size_t dataSize = (msgSize == kSysexSize) ? 4096 : 155;
-		if (sysexChecksum({&voiceData[6], dataSize}) != pos[msgSize - 2]) {
-			return String::STRING_FOR_DX_ERROR_CHECKSUM_FAIL;
-		}
-
-		if (voiceData[1] != std::byte{67} || (voiceData[3] != std::byte{9} && voiceData[3] != std::byte{0})) {
-			return String::STRING_FOR_DX_ERROR_SYSEX_ID;
-		}
-
+		// Always succeed - we handle missing/invalid data with defaults
 		return String::EMPTY_STRING;
 	}
 
@@ -148,6 +156,11 @@ public:
 	}
 
 	void getProgramName(int32_t i, char dest[11]) {
+		// Bounds check - prevent buffer overflow
+		if (i < 0 || i >= numPatches()) {
+			dest[0] = '\0'; // Return empty string for invalid index
+			return;
+		}
 		normalizePgmName(dest,
 		                 reinterpret_cast<const char*>(getRawVoice() + ((i * 128) + (isCartridge() ? 118 : 145))));
 	}

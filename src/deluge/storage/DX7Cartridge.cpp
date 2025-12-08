@@ -154,7 +154,16 @@ constexpr T clearTopBit(T b) {
 
 void DX7Cartridge::unpackProgram(std::span<std::uint8_t> unpackPgm, size_t idx) {
 	if (!isCartridge()) {
+		// Single patch - only idx 0 is valid
+		if (idx != 0) {
+			return;
+		}
 		std::memcpy(unpackPgm.data(), &voiceData[6], 155);
+		return;
+	}
+
+	// Cartridge - idx must be 0-31
+	if (idx >= 32) {
 		return;
 	}
 
