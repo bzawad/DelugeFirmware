@@ -46,6 +46,8 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
+#include "hid/display/visualizer/visualizer_common.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -832,6 +834,10 @@ startHoldingDown:
 						selectedClipTimePressed = AudioEngine::audioSampleTimer;
 						view.setActiveModControllableTimelineCounter(clip);
 						view.displayOutputName(clip->output, true, clip);
+
+						// Set current clip for visualizer when holding clip in session view
+						// This allows visualizer to show clip-specific waveform when clip is held
+						deluge::hid::display::Visualizer::trySetClipForVisualizer(clip);
 					}
 				}
 
@@ -1084,6 +1090,11 @@ justEndClipPress:
 }
 
 void SessionView::clipPressEnded() {
+	// Clear clip visualizer when clip press ends (return to global visualizer)
+	if (isUIModeActive(UI_MODE_CLIP_PRESSED_IN_SONG_VIEW)) {
+		deluge::hid::display::Visualizer::clearClipForVisualizer();
+	}
+
 	// End stuttering since this can also end selection
 	if (isUIModeActive(UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) && isUIModeActive(UI_MODE_STUTTERING)) {
 		((ModControllableAudio*)view.activeModControllableModelStack.modControllable)
@@ -1913,6 +1924,11 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		return;
 	}
 
+	// Check if visualizer should be displayed
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
 		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip());
@@ -1926,15 +1942,24 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		if (currentPlaybackMode == &session) {
 			if (session.launchEventAtSwungTickCount) {
 				intToString(session.numRepeatsTilLaunch, &loopsRemainingText[17]);
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText(loopsRemainingText);
+
+				// Display popup using conditional logic based on visualizer state
+				deluge::hid::display::displayConditionalPopup(loopsRemainingText, view);
+			}
+			else {
+				// Cancel any lingering popup when the launch event countdown reaches zero
+				deluge::hid::display::cancelPopupIfVisualizerActive(view);
 			}
 		}
 
 		else { // Arrangement playback
 			if (playbackHandler.stopOutputRecordingAtLoopEnd) {
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText("Resampling will end...");
+				// Display popup using conditional logic based on visualizer state
+				deluge::hid::display::displayConditionalPopup("Resampling will end...", view);
+			}
+			else {
+				// Cancel any lingering popup when resampling ends
+				deluge::hid::display::cancelPopupIfVisualizerActive(view);
 			}
 		}
 	}
@@ -2412,13 +2437,17 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 				popupMsg.appendInt(quarterNotesRemaining);
 			}
 			if (display->haveOLED() && !ephemeral) {
-				deluge::hid::display::OLED::clearMainImage();
-				deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
-				deluge::hid::display::OLED::sendMainImage();
+				// Display popup using conditional logic based on visualizer state
+				deluge::hid::display::displayConditionalPopup(popupMsg.c_str(), view);
 			}
 			else {
 				display->displayPopup(popupMsg.c_str(), 1, true);
 			}
+		}
+		else {
+			// If no popup was shown (sixteenthNotesRemaining <= 0), cancel any lingering popup
+			// when visualizer is active
+			deluge::hid::display::cancelPopupIfVisualizerActive(view);
 		}
 	}
 	return sixteenthNotesRemaining;

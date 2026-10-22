@@ -38,6 +38,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
@@ -110,8 +111,15 @@ void ArrangerView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas)
 		else {
 			stemExport.displayStemExportProgressOLED(StemExportType::TRACK);
 		}
+		return;
 	}
-	else if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
+
+	// Check if visualizer should be displayed
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
+	if (currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW_AUDITION) {
 		Output* output = outputsOnScreen[yPressedEffective];
 		view.displayOutputName(output);
 	}
@@ -1232,6 +1240,10 @@ void ArrangerView::interactWithClipInstance(Output* output, int32_t yDisplay, Cl
 
 		// we've changed the clip selected, so set clip to current
 		currentSong->setCurrentClip(clip);
+
+		// Set current clip for visualizer when holding clip in arranger view
+		// This allows visualizer to show clip-specific waveform when clip is held
+		deluge::hid::display::Visualizer::trySetClipForVisualizer(clip);
 	}
 	else {
 		originallyPressedClipActualLength = clipInstance->length;
@@ -1763,6 +1775,9 @@ void ArrangerView::exitSubModeWithoutAction(UI* ui) {
 	}
 
 	else if (isUIModeActive(UI_MODE_HOLDING_ARRANGEMENT_ROW)) {
+		// Clear clip visualizer when arrangement row holding ends (return to global visualizer)
+		deluge::hid::display::Visualizer::clearClipForVisualizer();
+
 		// needs to be set before setActiveModControllableTimelineCounter so that midi follow mode can get
 		// the right model stack with param (otherwise midi follow mode will think you're still in a clip)
 		setNoSubMode();

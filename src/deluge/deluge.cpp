@@ -41,6 +41,7 @@
 #include "hid/display/oled.h"
 #include "hid/display/screensaver.h"
 #include "hid/display/seven_segment.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoder_input.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
@@ -340,6 +341,8 @@ void readButtonsAndPadsOnce() {
 }
 
 void setUIForLoadedSong(Song* song) {
+	// Reset visualizer state when loading a new song
+	deluge::hid::display::Visualizer::resetSessionMode();
 
 	UI* newUI;
 	Clip* currentClip = song->getCurrentClip();
